@@ -4,6 +4,10 @@ A native macOS clone of IntelliJ IDEA's **Database** tool window, written in
 SwiftUI/AppKit. Multiple data sources, schema explorer, editable data grid with
 staged changes, and SQL consoles — in a Darcula-flavored UI.
 
+> There's also a **browser/WASM version** in [`web/`](web/) — SQLite compiled to
+> WebAssembly + a virtualized React grid (100k rows at 60fps, no backend). See
+> [web/README.md](web/README.md).
+
 ![table editor](docs/table.png)
 
 ![sql console](docs/console.png)
