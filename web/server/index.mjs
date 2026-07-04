@@ -91,9 +91,22 @@ async function runQuery(id, sql) {
       return { columns: [], rows: [], rowsAffected: rows.affectedRows ?? 0, durationMs: performance.now() - started };
     }
   } catch (e) {
+    // Drop the cached pool/handle on error so the next attempt reconnects
+    // cleanly (e.g. after a VPN drop/reconnect) instead of reusing a dead one.
+    dropDriver(id);
     return { columns: [], rows: [], error: String(e.message || e), durationMs: performance.now() - started };
   }
   return { columns: [], rows: [], durationMs: performance.now() - started };
+}
+
+function dropDriver(id) {
+  const d = live.get(id);
+  if (!d) return;
+  live.delete(id);
+  try {
+    if (d.kind === "sqlite") d.db.close();
+    else d.pool.end?.();
+  } catch { /* ignore */ }
 }
 
 // node:sqlite gives column names via statement only when there are rows; for an

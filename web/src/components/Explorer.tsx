@@ -40,10 +40,14 @@ function ConnectionNode({ conn, search, schemas, selected, onExpandConnection, o
   const [open, setOpen] = useState(false);
   const state = schemas[conn.id];
 
+  const isError = !!(state && typeof state === "object" && "error" in state);
+
   function toggle() {
     const next = !open;
     setOpen(next);
-    if (next && state === undefined) onExpandConnection(conn.id);
+    // Fetch on first open, and re-fetch when reopening after an error (e.g. the
+    // VPN was down before and is up now).
+    if (next && (state === undefined || isError)) onExpandConnection(conn.id);
   }
 
   return (
@@ -56,9 +60,14 @@ function ConnectionNode({ conn, search, schemas, selected, onExpandConnection, o
         <span className="detail">{conn.kind}</span>
       </div>
       {open && state === "loading" && <div className="row" style={{ paddingLeft: 30, color: "var(--dim)" }}>connecting…</div>}
-      {open && state && typeof state === "object" && "error" in state && (
-        <div className="row" style={{ paddingLeft: 30, color: "#e06c75", height: "auto", whiteSpace: "normal", padding: "4px 8px 4px 30px" }}>
-          ⚠ {state.error}
+      {open && isError && (
+        <div
+          className="row"
+          style={{ paddingLeft: 30, color: "#e06c75", height: "auto", whiteSpace: "normal", padding: "4px 8px 4px 30px", cursor: "pointer" }}
+          onClick={() => onExpandConnection(conn.id)}
+          title="Click to retry"
+        >
+          ⚠ {(state as { error: string }).error} — click to retry
         </div>
       )}
       {open && Array.isArray(state) &&
