@@ -41,6 +41,13 @@ struct ConsoleView: View {
         .onChange(of: sql) { _, newValue in
             tab.isDirty = !newValue.trimmingCharacters(in: .whitespaces).isEmpty
         }
+        .task {
+            // Automation hook for screenshot/E2E testing.
+            if sql.isEmpty, let seed = ProcessInfo.processInfo.environment["DANIS_SQL"] {
+                sql = seed
+                run(script: seed)
+            }
+        }
     }
 
     private var completionContext: SQLCompletionContext {
@@ -289,7 +296,7 @@ private struct ResultGrid: View {
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
-            VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 0) {
                     Text("#")
                         .font(.system(size: 10)).foregroundStyle(Theme.dimText)
@@ -337,6 +344,7 @@ private struct ResultGrid: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .sheet(isPresented: Binding(get: { viewedValue != nil }, set: { if !$0 { viewedValue = nil } })) {
             VStack(alignment: .leading, spacing: 8) {
