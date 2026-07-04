@@ -5,6 +5,15 @@ import SwiftUI
 struct DanisDBViewerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var connectionStore = AppServices.shared.connectionStore
+
+    init() {
+        // Register BEFORE AppKit reads it, so tooltips are consistently fast
+        // from the first hover (not just after didFinishLaunching runs).
+        UserDefaults.standard.register(defaults: [
+            "NSInitialToolTipDelay": 90,     // ms before a tooltip first appears
+        ])
+    }
+
     @StateObject private var sessions = AppServices.shared.sessions
     @StateObject private var history = AppServices.shared.history
     @StateObject private var tabs = AppServices.shared.tabs
@@ -31,8 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        // Show .help() tooltips almost immediately (default is ~1–2s).
-        UserDefaults.standard.set(100, forKey: "NSInitialToolTipDelay")
+        // Belt-and-suspenders: also set it explicitly (register() covers the
+        // early read; set() covers any later re-read).
+        UserDefaults.standard.set(90, forKey: "NSInitialToolTipDelay")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             applyWindowFrameOverride()
             Task { await runAutomationHooks() }

@@ -1,5 +1,8 @@
-.build/
-.DS_Store
+*.env
 *.xcodeproj
+.DS_Store
+.build/
+.env
 dist/
 scripts/password-map.tsv
+secrets.json

@@ -41,10 +41,14 @@ staged changes, and SQL consoles — in a Darcula-flavored UI.
 
 ## Security
 
-No credentials ever touch the repo or the config file: passwords are stored
-only in the macOS Keychain (service `com.danis.dbviewer`), keyed by connection
-id. `connections.json` holds hosts/users only and lives in
-`~/Library/Application Support/DanisDBViewer/`.
+No credentials ever touch the repo. Passwords live in a plaintext file
+**outside the repo** — `~/Library/Application Support/DanisDBViewer/secrets.json`
+(`chmod 600`, `{ "<connection-uuid>": "<password>" }`) — the same model as
+`~/.pgpass` or a local `.env`. `connections.json` (same dir) holds hosts/users
+only. `secrets.json`/`.env` are also gitignored defensively.
+
+(Earlier versions used the macOS Keychain, but its ACL re-prompts every time the
+app's code signature changes; run `scripts/keychain-to-file.sh` once to migrate.)
 
 ## Build & run
 

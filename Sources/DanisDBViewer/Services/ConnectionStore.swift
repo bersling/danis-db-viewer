@@ -43,14 +43,14 @@ final class ConnectionStore: ObservableObject {
             connections.append(config)
         }
         if let password {
-            Keychain.setPassword(password, for: config.id)
+            SecretStore.setPassword(password, for: config.id)
         }
         save()
     }
 
     func remove(_ id: UUID) {
         connections.removeAll { $0.id == id }
-        Keychain.deletePassword(for: id)
+        SecretStore.deletePassword(for: id)
         save()
     }
 
@@ -60,7 +60,7 @@ final class ConnectionStore: ObservableObject {
         copy.id = UUID()
         copy.name = original.name + " [copy]"
         connections.append(copy)
-        Keychain.setPassword(Keychain.password(for: id), for: copy.id)
+        SecretStore.setPassword(SecretStore.password(for: id), for: copy.id)
         save()
         return copy
     }

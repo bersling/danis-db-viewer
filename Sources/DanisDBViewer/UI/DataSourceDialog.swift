@@ -95,7 +95,7 @@ struct DataSourceDialog: View {
         .frame(width: 480)
         .onAppear {
             if !passwordLoaded {
-                password = Keychain.password(for: config.id)
+                password = SecretStore.password(for: config.id)
                 passwordLoaded = true
             }
         }

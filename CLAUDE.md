@@ -34,9 +34,10 @@ Sources/DanisDBViewer/
 
 - `AppServices.shared` holds the singletons (view-model `StateObject` inits need
   direct access, since they can't read `@EnvironmentObject`).
-- Passwords: macOS Keychain, service `com.danis.dbviewer`, account = connection UUID.
-  Never in `connections.json` (which holds host/user only, in
-  `~/Library/Application Support/DanisDBViewer/`).
+- Passwords: plaintext `secrets.json` (`{uuid: password}`, chmod 600) in
+  `~/Library/Application Support/DanisDBViewer/` — see `SecretStore`. NOT the
+  Keychain (its ACL re-prompts on every signature change) and NOT the repo.
+  `connections.json` (same dir) holds host/user only.
 
 ## Persisted state (outside the repo)
 
@@ -89,14 +90,11 @@ tests are gated on `DANIS_IT_PG=1` / `DANIS_IT_MYSQL=1` with Docker containers
   ~30s+ and hit the connect timeout). MySQL introspect now does 5 queries total
   keyed by schema+table; Postgres still loops per-schema (batch it too if slow).
   If `config.database` is set, scope introspection to it.
-- **Keychain "Always Allow" persistence needs stable code signing.** Ad-hoc
-  `codesign -s -` changes the app's identity every build, so the Keychain ACL
-  never matches → macOS re-prompts (with a password field) forever.
-  `make-app.sh` now signs with a stable self-signed identity
-  (`make-signing-identity.sh`: openssl cert w/ keyUsage=digitalSignature +
-  EKU=codeSigning, PKCS12 `-legacy`, imported, signed *by hash* — trust isn't
-  needed for ACL matching). The user still enters their login password + "Always
-  Allow" ONCE per identity; after that it persists across rebuilds.
+- **Passwords moved off the Keychain to a plaintext file** (see SecretStore) —
+  the Keychain ACL re-prompted (with a login-password field) on every code-sig
+  change, which never stabilized enough in practice. The stable self-signed
+  identity in `make-app.sh`/`make-signing-identity.sh` is still used for the app
+  bundle, but passwords no longer depend on it.
 - **Empty MySQL tables show no columns** unless you fall back to introspected
   columns — MySQLNIO exposes column metadata only via the first row.
   TableGridModel.load handles this.

@@ -54,7 +54,7 @@ struct DataSourceConfig: Codable, Identifiable, Equatable, Hashable {
     var comment: String = ""
 
     /// Password to use when connecting.
-    var resolvedPassword: String { transientPassword ?? Keychain.password(for: id) }
+    var resolvedPassword: String { transientPassword ?? SecretStore.password(for: id) }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, kind, host, port, user, database, filePath, color, comment

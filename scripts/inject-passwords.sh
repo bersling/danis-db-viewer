@@ -1,8 +1,10 @@
 #!/bin/bash
-# Inject DB passwords into Dani's DB Viewer's Keychain WITHOUT anyone reading them.
+# Inject DB passwords into Dani's DB Viewer's secrets file, WITHOUT printing them.
 #
-# Values flow: GitLab CI/CD variable  ──curl──▶  shell var  ──▶  macOS Keychain
-# They are never printed, never written to a readable file, never echoed.
+# Values flow: GitLab CI/CD variable ──curl──▶ shell var ──▶ secrets.json
+# Never echoed to the terminal. The secrets file lives OUTSIDE the repo
+# (~/Library/Application Support/DanisDBViewer/secrets.json, chmod 600) and is a
+# plaintext { "<uuid>": "<password>" } map the app reads directly.
 #
 # Usage:
 #   export GITLAB_TOKEN=...            # a token that can read the CI/CD variables
@@ -13,18 +15,18 @@
 #   <connection-name>\t<gitlab-project-path-or-id>\t<ci-variable-key>
 # e.g.
 #   LapProdRO\ttaskbase/tb\tLAP_DB_RO_PASSWORD
-#
-# The connection-name is matched against connections.json to resolve the UUID
-# the app uses as the Keychain account.
 set -euo pipefail
 
 HOST="${GITLAB_HOST:-code.taskbase.com}"
 TOKEN="${GITLAB_TOKEN:?set GITLAB_TOKEN to a token that can read the CI/CD variables}"
 MAP="${1:?usage: inject-passwords.sh <map.tsv>}"
-STORE="$HOME/Library/Application Support/DanisDBViewer/connections.json"
-SERVICE="com.danis.dbviewer"
+DIR="$HOME/Library/Application Support/DanisDBViewer"
+STORE="$DIR/connections.json"
+SECRETS="$DIR/secrets.json"
 
 [ -f "$STORE" ] || { echo "no connections.json at $STORE — add data sources first"; exit 1; }
+[ -f "$SECRETS" ] || echo '{}' > "$SECRETS"
+chmod 600 "$SECRETS"
 
 # name -> uuid, read from connections.json (no secrets involved)
 uuid_for() {
@@ -55,14 +57,21 @@ while IFS=$'\t' read -r name project var || [ -n "$name" ]; do
 
   if [ -z "$value" ]; then echo "✗ $name — empty value for $var"; fail=$((fail+1)); continue; fi
 
-  # Upsert into the same Keychain slot the app reads (SecItemCopyMatching
-  # service=com.danis.dbviewer, account=<uuid>).
-  security add-generic-password -U -s "$SERVICE" -a "$uuid" -w "$value" >/dev/null
-  value=""   # drop from memory
-  echo "✓ $name — password stored in Keychain"
+  # Upsert into secrets.json under the connection UUID. Python reads the value
+  # from an env var (not argv) so it never appears in the process list.
+  VAL="$value" UUID="$uuid" SECRETS="$SECRETS" python3 <<'PY'
+import json, os
+p = os.environ["SECRETS"]
+d = json.load(open(p))
+d[os.environ["UUID"]] = os.environ["VAL"]
+json.dump(d, open(p, "w"), indent=2, sort_keys=True)
+PY
+  value=""; VAL=""   # drop from memory
+  echo "✓ $name — password stored"
   ok=$((ok+1))
 done < "$MAP"
 
+chmod 600 "$SECRETS"
 echo
-echo "$ok stored, $fail failed."
-echo "Reconnect in the app — passwords resolve from the Keychain automatically."
+echo "$ok stored, $fail failed → $SECRETS"
+echo "Reconnect in the app — passwords resolve from the file automatically (no Keychain prompt)."
