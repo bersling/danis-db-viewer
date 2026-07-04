@@ -187,7 +187,7 @@ private struct DataSourceNode: View {
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) { toggleAndConnect() }
+            .onTapGesture { expanded.toggle() }
         }
         .onChange(of: expanded) { _, isOpen in
             if isOpen && sessions.introspections[config.id] == nil {
@@ -228,10 +228,6 @@ private struct DataSourceNode: View {
                 connectionStore.remove(config.id)
             }
         }
-    }
-
-    private func toggleAndConnect() {
-        expanded.toggle()
     }
 
     /// Hide schemas with no matches while searching.
@@ -336,7 +332,7 @@ private struct TableNode: View {
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
-            .onTapGesture(count: 2) {
+            .onTapGesture {
                 tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
             }
         }

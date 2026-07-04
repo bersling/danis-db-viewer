@@ -9,6 +9,7 @@ struct DataGridView: View {
     @Binding var viewedValue: String?
 
     @State private var editingCell: CellCoord?
+    @State private var selectedCell: CellCoord?
     @State private var editDraft = ""
     @FocusState private var editFocused: Bool
 
@@ -26,6 +27,13 @@ struct DataGridView: View {
             }
         }
         .background(Theme.editorBackground)
+        .focusable(editingCell == nil)
+        .focusEffectDisabled()
+        .onKeyPress(.return) {
+            guard editingCell == nil, let cell = selectedCell else { return .ignored }
+            startEdit(cell, value: cellValue(row: cell.row, col: cell.col))
+            return .handled
+        }
     }
 
     private var widths: [CGFloat] { columnWidths() }
@@ -133,10 +141,20 @@ struct DataGridView: View {
         }
         .frame(width: widths[col], height: rowHeight, alignment: .leading)
         .background(cellBackground(isInserted: isInserted, isDeleted: isDeleted, isEdited: isEdited, isSelected: isSelected, row: row))
-        .border(Theme.gridLine, width: 0.5)
+        .border(selectedCell == coord && editingCell == nil ? Theme.accent : Theme.gridLine,
+                width: selectedCell == coord && editingCell == nil ? 1.5 : 0.5)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) { startEdit(coord, value: value) }
-        .onTapGesture(count: 1) { select(row: row) }
+        .onTapGesture {
+            // Click selects; a second click on the selected cell edits.
+            if editingCell == coord { return }
+            if selectedCell == coord {
+                startEdit(coord, value: value)
+            } else {
+                commitEditIfNeeded()
+                selectedCell = coord
+                select(row: row)
+            }
+        }
         .contextMenu {
             Button("Edit Cell") { startEdit(coord, value: value) }
             Button("Set NULL") { setCell(coord, to: .null) }
@@ -176,6 +194,11 @@ struct DataGridView: View {
         editDraft = value.editString
         editingCell = coord
         DispatchQueue.main.async { editFocused = true }
+    }
+
+    /// Clicking another cell while editing commits the in-progress edit.
+    private func commitEditIfNeeded() {
+        if editingCell != nil { commitEdit() }
     }
 
     private func commitEdit() {
