@@ -55,10 +55,18 @@ private func runAutomationHooks() async {
     let env = ProcessInfo.processInfo.environment
     guard env["DANIS_OPEN_TABLE"] != nil || env["DANIS_OPEN_CONSOLE"] != nil else { return }
     let services = AppServices.shared
-    guard let config = services.connectionStore.connections.first else { return }
-    guard let intro = await services.sessions.refreshIntrospection(for: config) else { return }
+    // Pick by name (DANIS_DS) or fall back to the first connection.
+    let config: DataSourceConfig
+    if let name = env["DANIS_DS"],
+       let match = services.connectionStore.connections.first(where: { $0.name == name }) {
+        config = match
+    } else if let first = services.connectionStore.connections.first {
+        config = first
+    } else { return }
+
+    let intro = await services.sessions.refreshIntrospection(for: config)
     if let tableName = env["DANIS_OPEN_TABLE"],
-       let table = intro.allTables.first(where: { $0.name == tableName }) {
+       let table = intro?.allTables.first(where: { $0.name == tableName }) {
         services.tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
     }
     if env["DANIS_OPEN_CONSOLE"] != nil {

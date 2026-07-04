@@ -54,6 +54,19 @@ struct SQLEditor: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         context.coordinator.textView = textView
         context.coordinator.highlight()
+
+        // Test hook: focus + trigger completion on a partial word for screenshots.
+        if let partial = ProcessInfo.processInfo.environment["DANIS_COMPLETE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak textView] in
+                guard let textView else { return }
+                textView.window?.makeFirstResponder(textView)
+                textView.string = partial
+                self.text = partial
+                textView.setSelectedRange(NSRange(location: (partial as NSString).length, length: 0))
+                context.coordinator.highlight()
+                textView.complete(nil)
+            }
+        }
         return scrollView
     }
 
@@ -74,10 +87,49 @@ struct SQLEditor: NSViewRepresentable {
             self.parent = parent
         }
 
+        /// True when the last edit inserted a single identifier character — the
+        /// cue to pop live completion (typing a letter, not deleting/pasting).
+        private var lastEditWasWordChar = false
+
+        func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
+                      replacementString: String?) -> Bool {
+            if let s = replacementString, s.count == 1, let c = s.first,
+               c.isLetter || c.isNumber || c == "_" {
+                lastEditWasWordChar = true
+            } else {
+                lastEditWasWordChar = false
+            }
+            return true
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView else { return }
             parent.text = textView.string
             highlight()
+            if lastEditWasWordChar { scheduleAutocomplete(textView) }
+        }
+
+        /// Show the completion list as you type, but only when candidates exist
+        /// (avoids the "No Completions" flash on non-matching input).
+        private func scheduleAutocomplete(_ textView: NSTextView) {
+            let range = textView.rangeForUserCompletion
+            guard range.location != NSNotFound, range.length > 0 else { return }
+            let partial = (textView.string as NSString).substring(with: range)
+            guard partial.count >= 1, !candidates(forPartial: partial).isEmpty else { return }
+            // Defer so the just-typed character is committed before the popup.
+            DispatchQueue.main.async { [weak textView] in
+                textView?.complete(nil)
+            }
+        }
+
+        private func candidates(forPartial partial: String) -> [String] {
+            let p = partial.lowercased()
+            var out: [String] = []
+            out += parent.completion.tableNames.filter { $0.lowercased().hasPrefix(p) }
+            out += parent.completion.columnNames.filter { $0.lowercased().hasPrefix(p) }
+            out += SQLKeywords.all.filter { $0.lowercased().hasPrefix(p) }
+            var seen = Set<String>()
+            return out.filter { seen.insert($0.lowercased()).inserted }
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -95,17 +147,12 @@ struct SQLEditor: NSViewRepresentable {
             return false
         }
 
-        // Ctrl+Space style completion via NSTextView's built-in machinery.
+        // Candidate list for both live and manual (Esc/F5) completion.
         func textView(_ textView: NSTextView, completions words: [String],
                       forPartialWordRange charRange: NSRange, indexOfSelectedItem index: UnsafeMutablePointer<Int>?) -> [String] {
-            let partial = (textView.string as NSString).substring(with: charRange).lowercased()
+            let partial = (textView.string as NSString).substring(with: charRange)
             guard !partial.isEmpty else { return [] }
-            var candidates: [String] = []
-            candidates += parent.completion.tableNames.filter { $0.lowercased().hasPrefix(partial) }
-            candidates += parent.completion.columnNames.filter { $0.lowercased().hasPrefix(partial) }
-            candidates += SQLKeywords.all.filter { $0.lowercased().hasPrefix(partial) }
-            var seen = Set<String>()
-            return candidates.filter { seen.insert($0.lowercased()).inserted }
+            return candidates(forPartial: partial)
         }
 
         // MARK: Highlighting
