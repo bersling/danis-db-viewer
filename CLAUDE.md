@@ -89,6 +89,17 @@ tests are gated on `DANIS_IT_PG=1` / `DANIS_IT_MYSQL=1` with Docker containers
   ~30s+ and hit the connect timeout). MySQL introspect now does 5 queries total
   keyed by schema+table; Postgres still loops per-schema (batch it too if slow).
   If `config.database` is set, scope introspection to it.
+- **Keychain "Always Allow" persistence needs stable code signing.** Ad-hoc
+  `codesign -s -` changes the app's identity every build, so the Keychain ACL
+  never matches → macOS re-prompts (with a password field) forever.
+  `make-app.sh` now signs with a stable self-signed identity
+  (`make-signing-identity.sh`: openssl cert w/ keyUsage=digitalSignature +
+  EKU=codeSigning, PKCS12 `-legacy`, imported, signed *by hash* — trust isn't
+  needed for ACL matching). The user still enters their login password + "Always
+  Allow" ONCE per identity; after that it persists across rebuilds.
+- **Empty MySQL tables show no columns** unless you fall back to introspected
+  columns — MySQLNIO exposes column metadata only via the first row.
+  TableGridModel.load handles this.
 - SwiftUI tree rows currently expose no accessibility labels (only roles) — an
   a11y gap; click tree rows by computed position, not by name.
 - Control-click on a tree row currently toggles expand instead of only showing the
