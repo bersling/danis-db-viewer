@@ -67,7 +67,7 @@ struct ConsoleView: View {
             } label: {
                 Image(systemName: "play.fill").foregroundStyle(.green)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .disabled(running)
             .help(selection.length > 0 ? "Execute selection (⌘⏎)" : "Execute statement at caret (⌘⏎)")
 
@@ -76,7 +76,7 @@ struct ConsoleView: View {
             } label: {
                 Image(systemName: "forward.fill").foregroundStyle(.green)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .disabled(running)
             .help("Execute whole script")
 
@@ -91,7 +91,7 @@ struct ConsoleView: View {
             } label: {
                 Image(systemName: "clock.arrow.circlepath")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .help("Query history")
             .popover(isPresented: $showHistory, arrowEdge: .bottom) {
                 HistoryPopover(dataSourceName: dataSource.name) { picked in
@@ -263,9 +263,11 @@ struct ResultView: View {
                         Button("Save as JSON…") { save(text: Exporter.json(columns: result.columns, rows: result.rows), ext: "json") }
                     } label: {
                         Image(systemName: "square.and.arrow.up").font(.system(size: 10))
+                            .frame(width: 30, height: 20)
+                            .contentShape(Rectangle())
                     }
                     .menuStyle(.borderlessButton)
-                    .frame(width: 30)
+                    .frame(width: 30, height: 20)
                 }
                 Text(String(format: "%.0f ms", result.duration * 1000))
                     .font(.system(size: 10))

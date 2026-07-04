@@ -77,6 +77,8 @@ private struct TabButton: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(hovering || isSelected ? Theme.text : .clear)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }

@@ -73,7 +73,7 @@ struct TableEditorView: View {
                 Image(systemName: "arrow.up.circle")
                     .foregroundStyle(model.hasPendingChanges ? Color.green : Theme.dimText)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .disabled(!model.hasPendingChanges)
             .help("Submit pending changes (⌘⏎)")
             .keyboardShortcut(.return, modifiers: .command)
@@ -84,7 +84,7 @@ struct TableEditorView: View {
                 Image(systemName: "arrow.uturn.backward.circle")
                     .foregroundStyle(model.hasPendingChanges ? Theme.text : Theme.dimText)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .disabled(!model.hasPendingChanges)
             .help("Revert pending changes")
 
@@ -93,14 +93,14 @@ struct TableEditorView: View {
             Button {
                 model.addRow()
             } label: { Image(systemName: "plus") }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .help("Add row (⌘N)")
 
             Button {
                 model.markDeleted(selectedRows)
                 selectedRows = []
             } label: { Image(systemName: "minus") }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .disabled(selectedRows.isEmpty)
             .help("Delete selected rows (⌘⌫)")
 
@@ -109,7 +109,7 @@ struct TableEditorView: View {
             Button {
                 model.reload()
             } label: { Image(systemName: "arrow.clockwise") }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .help("Reload page (F5)")
             .keyboardShortcut("r", modifiers: .command)
 
@@ -119,7 +119,7 @@ struct TableEditorView: View {
                 Image(systemName: "arrow.left.arrow.right.square")
                     .foregroundStyle(transposed ? Theme.accent : Theme.text)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .help("Transpose (record view)")
 
             exportMenu
@@ -157,9 +157,11 @@ struct TableEditorView: View {
             }
         } label: {
             Image(systemName: "square.and.arrow.up")
+                .frame(width: 34, height: 24)
+                .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
-        .frame(width: 34)
+        .frame(width: 34, height: 24)
         .help("Export data")
     }
 
@@ -175,21 +177,21 @@ struct TableEditorView: View {
                 }
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 52)
+            .frame(width: 52, height: 24)
             .help("Page size")
 
             Button { model.firstPage() } label: { Image(systemName: "chevron.left.2") }
-                .buttonStyle(.borderless).disabled(model.offset == 0)
+                .buttonStyle(.icon).disabled(model.offset == 0)
             Button { model.prevPage() } label: { Image(systemName: "chevron.left") }
-                .buttonStyle(.borderless).disabled(model.offset == 0)
+                .buttonStyle(.icon).disabled(model.offset == 0)
             Text(model.pageDescription)
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dimText)
                 .frame(minWidth: 80)
             Button { model.nextPage() } label: { Image(systemName: "chevron.right") }
-                .buttonStyle(.borderless).disabled(!model.canPageForward)
+                .buttonStyle(.icon).disabled(!model.canPageForward)
             Button { model.lastPage() } label: { Image(systemName: "chevron.right.2") }
-                .buttonStyle(.borderless).disabled(!model.canPageForward || model.totalRows == nil)
+                .buttonStyle(.icon).disabled(!model.canPageForward || model.totalRows == nil)
         }
     }
 
@@ -217,7 +219,7 @@ struct TableEditorView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 10))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.icon)
             }
         }
         .padding(.horizontal, 8)
@@ -233,7 +235,7 @@ struct TableEditorView: View {
                 .lineLimit(3)
             Spacer()
             Button { model.error = nil } label: { Image(systemName: "xmark").font(.system(size: 9)) }
-                .buttonStyle(.borderless)
+                .buttonStyle(.icon)
         }
         .padding(6)
         .background(Color.red.opacity(0.1))

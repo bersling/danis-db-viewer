@@ -71,9 +71,11 @@ struct ExplorerView: View {
                 }
             } label: {
                 Image(systemName: "plus")
+                    .frame(width: 30, height: 24)
+                    .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 30)
+            .frame(width: 30, height: 24)
             .help("New Data Source")
 
             Button {
@@ -85,7 +87,7 @@ struct ExplorerView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.icon)
             .help("Refresh connected data sources (F5)")
             .keyboardShortcut(.init("r"), modifiers: [.command, .shift])
 

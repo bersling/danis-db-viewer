@@ -33,6 +33,27 @@ enum Theme {
     static let editorNSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 }
 
+/// Icon buttons with a real hit target: pads the glyph to at least 26×24 pt
+/// and makes the whole area clickable, with subtle pressed feedback.
+struct IconButtonStyle: ButtonStyle {
+    var minWidth: CGFloat = 26
+    var minHeight: CGFloat = 24
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(minWidth: minWidth, minHeight: minHeight)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(configuration.isPressed ? Color.white.opacity(0.12) : .clear)
+            )
+    }
+}
+
+extension ButtonStyle where Self == IconButtonStyle {
+    static var icon: IconButtonStyle { IconButtonStyle() }
+}
+
 /// Object-type icons like IntelliJ's.
 enum ObjectIcon {
     static func dataSource(_ kind: DBKind) -> String { "cylinder.split.1x2" }
