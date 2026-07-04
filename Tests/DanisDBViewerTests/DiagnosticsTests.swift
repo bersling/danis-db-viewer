@@ -51,13 +51,33 @@ final class DiagnosticsTests: XCTestCase {
     func testConnectTimeoutFiresQuickly() async {
         let start = Date()
         do {
-            _ = try await ConnectionDiagnostics.withConnectTimeout { () -> Int in
+            _ = try await ConnectionDiagnostics.withConnectTimeout(connect: { () -> Int in
                 try await Task.sleep(nanoseconds: 60_000_000_000)
                 return 1
-            }
+            }, close: { _ in })
             XCTFail("should have timed out")
         } catch {
             XCTAssertLessThan(Date().timeIntervalSince(start), ConnectionDiagnostics.connectTimeout + 3)
+        }
+    }
+
+    /// The losing (late) connection must be closed, not leaked — this is what
+    /// prevented the MySQLConnection.deinit trap that crashed the app.
+    func testTimeoutClosesLateConnection() async {
+        actor Flag { var closed = false; func mark() { closed = true }; func get() -> Bool { closed } }
+        let flag = Flag()
+        do {
+            _ = try await ConnectionDiagnostics.withConnectTimeout(connect: { () -> Int in
+                // Resolve AFTER the timeout fires, producing a value that must be closed.
+                try? await Task.sleep(nanoseconds: UInt64((ConnectionDiagnostics.connectTimeout + 1) * 1_000_000_000))
+                return 42
+            }, close: { _ in await flag.mark() })
+            XCTFail("should have timed out")
+        } catch {
+            // give the late connect task time to resolve and be closed
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            let closed = await flag.get()
+            XCTAssertTrue(closed, "late connection was not closed → would trap in deinit")
         }
     }
 }

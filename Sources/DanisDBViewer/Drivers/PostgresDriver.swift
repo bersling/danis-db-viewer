@@ -34,9 +34,11 @@ final class PostgresDriver: DatabaseDriver {
         do {
             let eventLoop = group.next()
             let log = logger
-            connection = try await ConnectionDiagnostics.withConnectTimeout {
+            connection = try await ConnectionDiagnostics.withConnectTimeout(connect: {
                 try await PostgresConnection.connect(on: eventLoop, configuration: cfg, id: 1, logger: log)
-            }
+            }, close: { conn in
+                try? await conn.close()
+            })
         } catch {
             try? await group.shutdownGracefully()
             self.group = nil

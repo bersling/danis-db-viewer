@@ -2,19 +2,39 @@ import Foundation
 
 /// Turns opaque connection errors into actionable messages with likely causes.
 enum ConnectionDiagnostics {
-    static let connectTimeout: TimeInterval = 10
+    // Generous enough for a cold RDS/Aiven handshake over VPN, but far below the
+    // ~75s OS default so a truly dead host still fails reasonably fast.
+    static let connectTimeout: TimeInterval = 25
 
     /// Race an async connect against a deadline so a silently dropped SYN
     /// (firewall, VPN) fails fast instead of hanging.
-    static func withConnectTimeout<T: Sendable>(_ op: @escaping @Sendable () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await op() }
+    ///
+    /// NIO connections (MySQLNIO/PostgresNIO) trap in `deinit` if deallocated
+    /// without an explicit `close()`. So on timeout we must not just drop the
+    /// in-flight connect — we await its eventual result and close it. `connect`
+    /// returns the connection; `close` disposes of one that arrived too late.
+    static func withConnectTimeout<C: Sendable>(
+        connect: @escaping @Sendable () async throws -> C,
+        close: @escaping @Sendable (C) async -> Void
+    ) async throws -> C {
+        try await withThrowingTaskGroup(of: C?.self) { group in
+            group.addTask { try await connect() }                 // → .some(conn)
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(connectTimeout * 1_000_000_000))
-                throw DriverError.connectionFailed("__timeout__")
+                return nil                                        // → timeout sentinel
             }
-            defer { group.cancelAll() }
-            return try await group.next()!
+            let first = try await group.next()!
+            group.cancelAll()
+            if let conn = first {
+                return conn                                       // connect won the race
+            }
+            // Timeout won. The connect task is still in flight and NIO won't
+            // honor cancellation — await it and close any connection it yields
+            // so it never deallocates unclosed.
+            while let late = try? await group.next() {
+                if let leaked = late { await close(leaked) }
+            }
+            throw DriverError.connectionFailed("__timeout__")
         }
     }
 

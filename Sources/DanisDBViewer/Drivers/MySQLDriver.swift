@@ -27,7 +27,7 @@ final class MySQLDriver: DatabaseDriver {
             let cfg = config
             let log = logger
             let eventLoop = group.next()
-            connection = try await ConnectionDiagnostics.withConnectTimeout {
+            connection = try await ConnectionDiagnostics.withConnectTimeout(connect: {
                 let address = try SocketAddress.makeAddressResolvingHost(cfg.host, port: cfg.effectivePort)
                 return try await MySQLConnection.connect(
                     to: address,
@@ -38,7 +38,9 @@ final class MySQLDriver: DatabaseDriver {
                     logger: log,
                     on: eventLoop
                 ).get()
-            }
+            }, close: { conn in
+                try? await conn.close().get()
+            })
         } catch {
             try? await group.shutdownGracefully()
             self.group = nil
