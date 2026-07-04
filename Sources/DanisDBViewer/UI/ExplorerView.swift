@@ -165,7 +165,11 @@ private struct DataSourceNode: View {
                 }
             } else if let error = sessions.errors[config.id] {
                 Label {
-                    Text(error).foregroundStyle(.red).font(.system(size: 11)).lineLimit(3)
+                    Text(error)
+                        .foregroundStyle(.red)
+                        .font(.system(size: 11))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
                 }

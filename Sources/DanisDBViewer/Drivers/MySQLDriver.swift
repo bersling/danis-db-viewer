@@ -24,20 +24,27 @@ final class MySQLDriver: DatabaseDriver {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         self.group = group
         do {
-            let address = try SocketAddress.makeAddressResolvingHost(config.host, port: config.effectivePort)
-            connection = try await MySQLConnection.connect(
-                to: address,
-                username: config.user,
-                database: config.database,
-                password: config.resolvedPassword,
-                tlsConfiguration: nil,
-                logger: logger,
-                on: group.next()
-            ).get()
+            let cfg = config
+            let log = logger
+            let eventLoop = group.next()
+            connection = try await ConnectionDiagnostics.withConnectTimeout {
+                let address = try SocketAddress.makeAddressResolvingHost(cfg.host, port: cfg.effectivePort)
+                return try await MySQLConnection.connect(
+                    to: address,
+                    username: cfg.user,
+                    database: cfg.database,
+                    password: cfg.resolvedPassword,
+                    tlsConfiguration: nil,
+                    logger: log,
+                    on: eventLoop
+                ).get()
+            }
         } catch {
             try? await group.shutdownGracefully()
             self.group = nil
-            throw DriverError.connectionFailed(describe(error))
+            let described = DriverError.connectionFailed(describe(error))
+            throw DriverError.connectionFailed(ConnectionDiagnostics.explain(
+                (error as? DriverError) ?? described, config: config))
         }
     }
 

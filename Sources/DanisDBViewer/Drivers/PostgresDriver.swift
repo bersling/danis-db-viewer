@@ -32,12 +32,17 @@ final class PostgresDriver: DatabaseDriver {
             tls: .disable
         )
         do {
-            connection = try await PostgresConnection.connect(
-                on: group.next(), configuration: cfg, id: 1, logger: logger)
+            let eventLoop = group.next()
+            let log = logger
+            connection = try await ConnectionDiagnostics.withConnectTimeout {
+                try await PostgresConnection.connect(on: eventLoop, configuration: cfg, id: 1, logger: log)
+            }
         } catch {
             try? await group.shutdownGracefully()
             self.group = nil
-            throw DriverError.connectionFailed(describe(error))
+            let described = DriverError.connectionFailed(describe(error))
+            throw DriverError.connectionFailed(ConnectionDiagnostics.explain(
+                (error as? DriverError) ?? described, config: config))
         }
     }
 

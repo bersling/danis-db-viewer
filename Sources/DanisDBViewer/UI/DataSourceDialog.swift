@@ -53,13 +53,17 @@ struct DataSourceDialog: View {
             .padding(16)
 
             if let result = testResult {
-                HStack(spacing: 6) {
+                HStack(alignment: .top, spacing: 6) {
                     Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(result.success ? .green : .red)
-                    Text(result.success ? "Connection successful" : result.message)
-                        .font(.system(size: 11))
-                        .lineLimit(3)
-                        .textSelection(.enabled)
+                    ScrollView {
+                        Text(result.success ? "Connection successful" : result.message)
+                            .font(.system(size: 11))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: result.success ? 20 : 150)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
