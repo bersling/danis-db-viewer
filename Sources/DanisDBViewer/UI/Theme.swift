@@ -33,6 +33,37 @@ enum Theme {
     static let editorNSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 }
 
+/// Hover affordance for clickable rows: subtle highlight + pointing-hand cursor.
+struct HoverHighlight: ViewModifier {
+    @State private var hovering = false
+    var showsCursor = true
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(hovering ? Color.white.opacity(0.07) : .clear)
+            )
+            .padding(.horizontal, -4)
+            .onHover { isHovering in
+                hovering = isHovering
+                guard showsCursor else { return }
+                if isHovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+    }
+}
+
+extension View {
+    func hoverHighlight(showsCursor: Bool = true) -> some View {
+        modifier(HoverHighlight(showsCursor: showsCursor))
+    }
+}
+
 /// Object-type icons like IntelliJ's.
 enum ObjectIcon {
     static func dataSource(_ kind: DBKind) -> String { "cylinder.split.1x2" }

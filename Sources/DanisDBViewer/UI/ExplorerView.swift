@@ -187,6 +187,7 @@ private struct DataSourceNode: View {
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
+            .hoverHighlight()
             .onTapGesture { expanded.toggle() }
         }
         .onChange(of: expanded) { _, isOpen in
@@ -275,7 +276,11 @@ private struct SchemaNode: View {
                 Text("\(schema.tables.count)")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.dimText)
+                Spacer(minLength: 0)
             }
+            .contentShape(Rectangle())
+            .hoverHighlight()
+            .onTapGesture { expanded.toggle() }
         }
     }
 }
@@ -332,6 +337,7 @@ private struct TableNode: View {
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
+            .hoverHighlight()
             .onTapGesture {
                 tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
             }
