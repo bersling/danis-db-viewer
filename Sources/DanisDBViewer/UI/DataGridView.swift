@@ -128,14 +128,16 @@ struct DataGridView: View {
         let isSelected = selectedRows.contains(row)
 
         return HStack(spacing: 0) {
-            Text(isInserted ? "+" : "\(model.offset + row + 1)")
-                .font(.system(size: 10))
-                .foregroundStyle(isInserted ? .green : Theme.dimText)
-                .frame(width: gutterWidth, height: rowHeight)
-                .background(isSelected ? Theme.selection : Theme.toolWindowBackground)
-                .border(Theme.gridLine, width: 0.5)
-                .contentShape(Rectangle())
-                .onTapGesture { select(row: row) }
+            Button { select(row: row) } label: {
+                Text(isInserted ? "+" : "\(model.offset + row + 1)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(isInserted ? .green : Theme.dimText)
+                    .frame(width: gutterWidth, height: rowHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(isSelected ? Theme.selection : Theme.toolWindowBackground)
+            .border(Theme.gridLine, width: 0.5)
 
             ForEach(model.columns.indices, id: \.self) { col in
                 cellView(row: row, col: col, isInserted: isInserted, isDeleted: isDeleted, isSelected: isSelected)
@@ -159,32 +161,34 @@ struct DataGridView: View {
                     .onExitCommand { editingCell = nil }
                     .padding(.horizontal, 4)
             } else {
-                (value.isNull
-                    ? Text("<null>").foregroundColor(Theme.nullText).italic()
-                    : Text(value.displayString))
-                    .font(Theme.monoFont)
-                    .lineLimit(1)
-                    .strikethrough(isDeleted)
-                    .padding(.horizontal, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Button (not onTapGesture) so clicks fire inside the scroll grid.
+                // Click selects; a second click on the selected cell edits.
+                Button {
+                    if selectedCell == coord {
+                        startEdit(coord, value: value)
+                    } else {
+                        commitEditIfNeeded()
+                        selectedCell = coord
+                        select(row: row)
+                    }
+                } label: {
+                    (value.isNull
+                        ? Text("<null>").foregroundColor(Theme.nullText).italic()
+                        : Text(value.displayString))
+                        .font(Theme.monoFont)
+                        .lineLimit(1)
+                        .strikethrough(isDeleted)
+                        .padding(.horizontal, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
         .frame(width: widths[col], height: rowHeight, alignment: .leading)
         .background(cellBackground(isInserted: isInserted, isDeleted: isDeleted, isEdited: isEdited, isSelected: isSelected, row: row))
         .border(selectedCell == coord && editingCell == nil ? Theme.accent : Theme.gridLine,
                 width: selectedCell == coord && editingCell == nil ? 1.5 : 0.5)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            // Click selects; a second click on the selected cell edits.
-            if editingCell == coord { return }
-            if selectedCell == coord {
-                startEdit(coord, value: value)
-            } else {
-                commitEditIfNeeded()
-                selectedCell = coord
-                select(row: row)
-            }
-        }
         .contextMenu {
             Button("Edit Cell") { startEdit(coord, value: value) }
             Button("Set NULL") { setCell(coord, to: .null) }

@@ -58,41 +58,47 @@ private struct TabButton: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            if let color = tab.dataSource.color.swiftUIColor {
-                RoundedRectangle(cornerRadius: 1.5).fill(color).frame(width: 3, height: 12)
+        // Whole tab is a Button (reliable); close (×) overlaid on the right.
+        Button {
+            tabs.selectedTabID = tab.id
+        } label: {
+            HStack(spacing: 6) {
+                if let color = tab.dataSource.color.swiftUIColor {
+                    RoundedRectangle(cornerRadius: 1.5).fill(color).frame(width: 3, height: 12)
+                }
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.dimText)
+                Text(tab.title)
+                    .font(Theme.uiFont)
+                    .lineLimit(1)
+                if tab.isDirty {
+                    Circle().fill(Color.orange).frame(width: 6, height: 6)
+                }
+                Color.clear.frame(width: 18, height: 18)   // room for the × button
             }
-            Image(systemName: icon)
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.dimText)
-            Text(tab.title)
-                .font(Theme.uiFont)
-                .lineLimit(1)
-            if tab.isDirty {
-                Circle().fill(Color.orange).frame(width: 6, height: 6)
-            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(isSelected ? Theme.editorBackground : (hovering ? Color.white.opacity(0.04) : .clear))
+        .overlay(alignment: .bottom) {
+            if isSelected { Rectangle().fill(Theme.accent).frame(height: 2) }
+        }
+        .overlay(alignment: .trailing) {
             Button {
                 tabs.close(tab)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(hovering || isSelected ? Theme.text : .clear)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 20, height: 30)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Close tab")
         }
-        .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(isSelected ? Theme.editorBackground : .clear)
-        .overlay(alignment: .bottom) {
-            if isSelected {
-                Rectangle().fill(Theme.accent).frame(height: 2)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { tabs.selectedTabID = tab.id }
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Close") { tabs.close(tab) }

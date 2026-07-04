@@ -2,8 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Which tree node is currently selected (IntelliJ: single-click selects,
-/// double-click opens). Uses manual click timing because SwiftUI's stacked
-/// count:1 / count:2 tap gestures conflict inside a DisclosureGroup label.
+/// double-click opens). Manual click timing distinguishes the two.
 final class TreeSelection: ObservableObject {
     @Published var selectedID: String?
     private var lastClickID: String?
@@ -20,6 +19,75 @@ final class TreeSelection: ObservableObject {
     }
 }
 
+private enum Tree {
+    static let rowHeight: CGFloat = 24
+    static let indent: CGFloat = 14
+}
+
+/// One tree row: full-width, fixed-height, entirely clickable (no dead gaps).
+/// Built on ScrollView/VStack rather than List so we control every pixel —
+/// List swallowed custom taps and imposed its own row spacing.
+private struct TreeRow<Trailing: View, Menu: View>: View {
+    var level: Int
+    var expandable: Bool = false
+    var expanded: Bool = false
+    var icon: String
+    var iconColor: Color
+    var label: String
+    var labelColor: Color = Theme.text
+    var stripe: Color? = nil
+    var selected: Bool = false
+    var help: String = ""
+    var onToggle: () -> Void = {}
+    var onTap: () -> Void = {}
+    @ViewBuilder var trailing: () -> Trailing
+    @ViewBuilder var menu: () -> Menu
+
+    var body: some View {
+        // The whole row is a Button (Buttons fire reliably; onTapGesture is
+        // flaky inside scrolling containers). The chevron is a separate Button
+        // overlaid on top of its glyph so it toggles instead of selecting.
+        Button(action: onTap) {
+            HStack(spacing: 5) {
+                Color.clear.frame(width: CGFloat(level) * Tree.indent, height: 1)
+                Group {
+                    if expandable {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Theme.dimText)
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                    }
+                }
+                .frame(width: 12)
+                if let stripe {
+                    RoundedRectangle(cornerRadius: 1.5).fill(stripe).frame(width: 3, height: 14)
+                }
+                Image(systemName: icon).foregroundStyle(iconColor).font(.system(size: 11))
+                Text(label).font(Theme.uiFont).foregroundStyle(labelColor)
+                trailing()
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: Tree.rowHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(selected ? Theme.selection : Color.clear)
+        .overlay(alignment: .leading) {
+            if expandable {
+                Button(action: onToggle) {
+                    Color.clear.frame(width: 22, height: Tree.rowHeight).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, CGFloat(level) * Tree.indent)
+            }
+        }
+        .help(help)
+        .contextMenu { menu() }
+    }
+}
+
 /// The Database tool window: data source tree with speed search, toolbar,
 /// context menus.
 struct ExplorerView: View {
@@ -30,7 +98,6 @@ struct ExplorerView: View {
 
     @State private var searchText = ""
     @State private var editorTarget: DataSourceConfig?
-    @State private var showingNewMenu = false
     @State private var confirmDrop: (config: DataSourceConfig, table: DBTableInfo)?
 
     var body: some View {
@@ -38,22 +105,24 @@ struct ExplorerView: View {
             toolbar
             Divider().overlay(Theme.border)
             searchField
-            List {
-                ForEach(filteredConnections) { config in
-                    DataSourceNode(
-                        config: config,
-                        searchText: searchText,
-                        onEdit: { editorTarget = config },
-                        onDropTable: { table in confirmDrop = (config, table) }
-                    )
-                }
-            }
-            .listStyle(.sidebar)
-            .environment(\.defaultMinListRowHeight, 22)
-            .environmentObject(selection)
-
+            Divider().overlay(Theme.border)
             if connectionStore.connections.isEmpty {
                 emptyHint
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(filteredConnections) { config in
+                            DataSourceNode(
+                                config: config,
+                                searchText: searchText,
+                                onEdit: { editorTarget = config },
+                                onDropTable: { table in confirmDrop = (config, table) }
+                            )
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .environmentObject(selection)
             }
         }
         .background(Theme.toolWindowBackground)
@@ -137,14 +206,15 @@ struct ExplorerView: View {
 
     private var emptyHint: some View {
         VStack(spacing: 8) {
+            Spacer()
             Text("No data sources")
                 .foregroundStyle(Theme.dimText)
             Text("Click + to add SQLite, PostgreSQL or MySQL")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dimText)
+            Spacer()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func dropTable(config: DataSourceConfig, table: DBTableInfo) {
@@ -170,6 +240,7 @@ private struct DataSourceNode: View {
     @EnvironmentObject var connectionStore: ConnectionStore
     @EnvironmentObject var sessions: SessionRegistry
     @EnvironmentObject var tabs: TabManager
+    @EnvironmentObject var selection: TreeSelection
 
     let config: DataSourceConfig
     let searchText: String
@@ -177,84 +248,94 @@ private struct DataSourceNode: View {
     let onDropTable: (DBTableInfo) -> Void
 
     @State private var expanded = false
+    private var nodeID: String { "ds/\(config.id)" }
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            if sessions.connecting.contains(config.id) {
-                Label { Text("Connecting…").foregroundStyle(Theme.dimText) } icon: {
-                    ProgressView().controlSize(.mini)
-                }
-            } else if let error = sessions.errors[config.id] {
-                Label {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .font(.system(size: 11))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
-                }
-            } else if let intro = sessions.introspections[config.id] {
-                ForEach(visibleSchemas(intro)) { schema in
-                    SchemaNode(config: config, schema: schema, searchText: searchText, onDropTable: onDropTable)
-                }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                if let color = config.color.swiftUIColor {
-                    RoundedRectangle(cornerRadius: 1.5).fill(color).frame(width: 3, height: 14)
-                }
-                Image(systemName: ObjectIcon.dataSource(config.kind))
-                    .foregroundStyle(sessions.isConnected(config.id) ? Color.green : Theme.dimText)
-                    .font(.system(size: 11))
-                Text(config.name).font(Theme.uiFont)
-                Text(config.kind.displayName)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.dimText)
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { expanded.toggle() }
-            .help("\(config.kind.displayName) data source" + (sessions.isConnected(config.id) ? " (connected)" : "") + " — click to expand")
+        VStack(alignment: .leading, spacing: 0) {
+            TreeRow(
+                level: 0, expandable: true, expanded: expanded,
+                icon: ObjectIcon.dataSource(config.kind),
+                iconColor: sessions.isConnected(config.id) ? .green : Theme.dimText,
+                label: config.name,
+                stripe: config.color.swiftUIColor,
+                selected: selection.selectedID == nodeID,
+                help: "\(config.kind.displayName) data source" + (sessions.isConnected(config.id) ? " (connected)" : "") + " — click to expand",
+                onToggle: toggle,
+                onTap: { selection.selectedID = nodeID; toggle() },
+                trailing: {
+                    Text(config.kind.displayName).font(.system(size: 10)).foregroundStyle(Theme.dimText)
+                },
+                menu: { menu }
+            )
+            if expanded { children }
         }
-        .onChange(of: expanded) { _, isOpen in
-            if isOpen && sessions.introspections[config.id] == nil {
-                Task { await sessions.refreshIntrospection(for: config) }
+    }
+
+    @ViewBuilder private var children: some View {
+        if sessions.connecting.contains(config.id) {
+            HStack(spacing: 6) {
+                Color.clear.frame(width: Tree.indent, height: 1)
+                ProgressView().controlSize(.mini)
+                Text("Connecting…").foregroundStyle(Theme.dimText).font(Theme.uiFont)
+            }
+            .frame(height: Tree.rowHeight)
+            .padding(.horizontal, 6)
+        } else if let error = sessions.errors[config.id] {
+            HStack(alignment: .top, spacing: 6) {
+                Color.clear.frame(width: Tree.indent, height: 1)
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.red).font(.system(size: 11))
+                Text(error)
+                    .foregroundStyle(.red).font(.system(size: 11))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            .padding(.horizontal, 6).padding(.vertical, 3)
+        } else if let intro = sessions.introspections[config.id] {
+            ForEach(visibleSchemas(intro)) { schema in
+                SchemaNode(config: config, schema: schema, searchText: searchText, onDropTable: onDropTable)
             }
         }
-        .contextMenu {
-            Button("New Query Console") { tabs.openConsole(dataSource: config) }
-            Divider()
-            Button("Refresh") { Task { await sessions.refreshIntrospection(for: config) } }
-            Button(sessions.isConnected(config.id) ? "Disconnect" : "Connect") {
-                Task {
-                    if sessions.isConnected(config.id) {
-                        await sessions.disconnect(config.id)
-                        expanded = false
-                    } else {
-                        await sessions.refreshIntrospection(for: config)
-                    }
+    }
+
+    private func toggle() {
+        expanded.toggle()
+        if expanded && sessions.introspections[config.id] == nil {
+            Task { await sessions.refreshIntrospection(for: config) }
+        }
+    }
+
+    @ViewBuilder private var menu: some View {
+        Button("New Query Console") { tabs.openConsole(dataSource: config) }
+        Divider()
+        Button("Refresh") { Task { await sessions.refreshIntrospection(for: config) } }
+        Button(sessions.isConnected(config.id) ? "Disconnect" : "Connect") {
+            Task {
+                if sessions.isConnected(config.id) {
+                    await sessions.disconnect(config.id)
+                    expanded = false
+                } else {
+                    await sessions.refreshIntrospection(for: config)
                 }
             }
-            Divider()
-            Button("Properties…") { onEdit() }
-            Button("Duplicate") { _ = connectionStore.duplicate(config.id) }
-            Menu("Color") {
-                ForEach(DataSourceColor.allCases) { c in
-                    Button(c.rawValue.capitalized) {
-                        var updated = config
-                        updated.color = c
-                        connectionStore.upsert(updated, password: nil)
-                    }
+        }
+        Divider()
+        Button("Properties…") { onEdit() }
+        Button("Duplicate") { _ = connectionStore.duplicate(config.id) }
+        Menu("Color") {
+            ForEach(DataSourceColor.allCases) { c in
+                Button(c.rawValue.capitalized) {
+                    var updated = config
+                    updated.color = c
+                    connectionStore.upsert(updated, password: nil)
                 }
             }
-            Divider()
-            Button("Copy Name") { copyToPasteboard(config.name) }
-            Button("Remove", role: .destructive) {
-                tabs.closeAll(for: config.id)
-                Task { await sessions.disconnect(config.id) }
-                connectionStore.remove(config.id)
-            }
+        }
+        Divider()
+        Button("Copy Name") { copyToPasteboard(config.name) }
+        Button("Remove", role: .destructive) {
+            tabs.closeAll(for: config.id)
+            Task { await sessions.disconnect(config.id) }
+            connectionStore.remove(config.id)
         }
     }
 
@@ -269,10 +350,10 @@ private struct DataSourceNode: View {
     }
 }
 
-// MARK: - Schema / table / column nodes
+// MARK: - Schema node
 
 private struct SchemaNode: View {
-    @EnvironmentObject var tabs: TabManager
+    @EnvironmentObject var selection: TreeSelection
 
     let config: DataSourceConfig
     let schema: DBSchemaInfo
@@ -280,6 +361,7 @@ private struct SchemaNode: View {
     let onDropTable: (DBTableInfo) -> Void
 
     @State private var expanded: Bool
+    private var nodeID: String { "schema/\(config.id)/\(schema.name)" }
 
     init(config: DataSourceConfig, schema: DBSchemaInfo, searchText: String, onDropTable: @escaping (DBTableInfo) -> Void) {
         self.config = config
@@ -290,24 +372,31 @@ private struct SchemaNode: View {
     }
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            ForEach(schema.tables) { table in
-                TableNode(config: config, table: table, onDropTable: onDropTable)
+        VStack(alignment: .leading, spacing: 0) {
+            TreeRow(
+                level: 1, expandable: true, expanded: expanded,
+                icon: ObjectIcon.schema,
+                iconColor: Color(red: 0.55, green: 0.65, blue: 0.85),
+                label: schema.name,
+                selected: selection.selectedID == nodeID,
+                help: "Schema “\(schema.name)” — \(schema.tables.count) tables/views",
+                onToggle: { expanded.toggle() },
+                onTap: { selection.selectedID = nodeID; expanded.toggle() },
+                trailing: {
+                    Text("\(schema.tables.count)").font(.system(size: 10)).foregroundStyle(Theme.dimText)
+                },
+                menu: { EmptyView() }
+            )
+            if expanded {
+                ForEach(schema.tables) { table in
+                    TableNode(config: config, table: table, onDropTable: onDropTable)
+                }
             }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: ObjectIcon.schema)
-                    .foregroundStyle(Color(red: 0.55, green: 0.65, blue: 0.85))
-                    .font(.system(size: 11))
-                Text(schema.name).font(Theme.uiFont)
-                Text("\(schema.tables.count)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.dimText)
-            }
-            .help("Schema “\(schema.name)” — \(schema.tables.count) tables/views")
         }
     }
 }
+
+// MARK: - Table node
 
 private struct TableNode: View {
     @EnvironmentObject var tabs: TabManager
@@ -318,9 +407,7 @@ private struct TableNode: View {
     let onDropTable: (DBTableInfo) -> Void
 
     @State private var expanded = false
-
     private var nodeID: String { "\(config.id)/\(table.schema).\(table.name)" }
-    private var isSelected: Bool { selection.selectedID == nodeID }
 
     private func open() {
         selection.selectedID = nodeID
@@ -328,95 +415,69 @@ private struct TableNode: View {
     }
 
     var body: some View {
-        // Custom expandable row (not DisclosureGroup) so the label's tap is ours:
-        // chevron expands, label single-click selects, double-click opens.
         VStack(alignment: .leading, spacing: 0) {
-            row
-            if expanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(table.columns) { col in
-                        ColumnRow(column: col, foreignKeys: table.foreignKeys)
+            TreeRow(
+                level: 2, expandable: true, expanded: expanded,
+                icon: table.kind == .view ? ObjectIcon.view : ObjectIcon.table,
+                iconColor: table.kind == .view ? Color(red: 0.65, green: 0.55, blue: 0.85) : Color(red: 0.75, green: 0.68, blue: 0.40),
+                label: table.name,
+                selected: selection.selectedID == nodeID,
+                help: "\(table.kind == .view ? "View" : "Table") “\(table.name)” — double-click to open, single-click to select",
+                onToggle: { expanded.toggle() },
+                onTap: {
+                    if selection.registerClick(nodeID) {
+                        tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
                     }
-                    ForEach(table.indexes) { idx in
-                        HStack(spacing: 5) {
-                            Image(systemName: ObjectIcon.index)
-                                .font(.system(size: 10)).foregroundStyle(Theme.dimText)
-                            Text(idx.name).font(Theme.uiFont)
-                            Text(idx.isUnique ? "unique (\(idx.columns.joined(separator: ", ")))" : "(\(idx.columns.joined(separator: ", ")))")
-                                .font(.system(size: 10)).foregroundStyle(Theme.dimText)
-                        }
-                    }
-                    ForEach(table.foreignKeys) { fk in
-                        HStack(spacing: 5) {
-                            Image(systemName: ObjectIcon.foreignKey)
-                                .font(.system(size: 10)).foregroundStyle(Color(red: 0.55, green: 0.65, blue: 0.85))
-                            Text("\(fk.columns.joined(separator: ",")) → \(fk.referencedTable)(\(fk.referencedColumns.joined(separator: ",")))")
-                                .font(.system(size: 11))
-                        }
-                    }
-                }
-                .padding(.leading, 18)
-            }
+                },
+                trailing: { EmptyView() },
+                menu: { menu }
+            )
+            if expanded { details }
         }
     }
 
-    private var row: some View {
-        HStack(spacing: 5) {
-            Button {
-                expanded.toggle()
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.dimText)
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(width: 12, height: 12)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+    @ViewBuilder private var details: some View {
+        ForEach(table.columns) { col in
+            ColumnRow(column: col, foreignKeys: table.foreignKeys)
+        }
+        ForEach(table.indexes) { idx in
+            TreeRow(
+                level: 3, icon: ObjectIcon.index, iconColor: Theme.dimText,
+                label: idx.name,
+                help: "Index on \(idx.columns.joined(separator: ", "))\(idx.isUnique ? " (unique)" : "")",
+                trailing: {
+                    Text(idx.isUnique ? "unique (\(idx.columns.joined(separator: ", ")))" : "(\(idx.columns.joined(separator: ", ")))")
+                        .font(.system(size: 10)).foregroundStyle(Theme.dimText).lineLimit(1)
+                },
+                menu: { EmptyView() }
+            )
+        }
+        ForEach(table.foreignKeys) { fk in
+            TreeRow(
+                level: 3, icon: ObjectIcon.foreignKey, iconColor: Color(red: 0.55, green: 0.65, blue: 0.85),
+                label: fk.columns.joined(separator: ","),
+                help: "Foreign key → \(fk.referencedTable)(\(fk.referencedColumns.joined(separator: ", ")))",
+                trailing: {
+                    Text("→ \(fk.referencedTable)(\(fk.referencedColumns.joined(separator: ",")))")
+                        .font(.system(size: 10)).foregroundStyle(Theme.dimText).lineLimit(1)
+                },
+                menu: { EmptyView() }
+            )
+        }
+    }
 
-            // Button (not onTapGesture) so clicks fire reliably inside the List.
-            // Manual timing: first click selects, second within 0.5s opens.
-            Button {
-                if selection.registerClick(nodeID) {
-                    tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: table.kind == .view ? ObjectIcon.view : ObjectIcon.table)
-                        .foregroundStyle(table.kind == .view ? Color(red: 0.65, green: 0.55, blue: 0.85) : Color(red: 0.75, green: 0.68, blue: 0.40))
-                        .font(.system(size: 11))
-                    Text(table.name).font(Theme.uiFont)
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("\(table.kind == .view ? "View" : "Table") “\(table.name)” — double-click to open, single-click to select")
-        }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? Theme.selection : .clear)
-        )
-        .contextMenu {
-            Button("Open Table") { open() }
-            Button("Go to DDL") {
-                tabs.openDDL(dataSource: config, schema: table.schema, table: table.name)
-            }
-            Divider()
-            Button("Copy Name") { copyToPasteboard(table.name) }
-            Button("Copy Qualified Name") { copyToPasteboard("\(table.schema).\(table.name)") }
-            Divider()
-            if table.kind != .view {
-                Button("Drop Table…", role: .destructive) { onDropTable(table) }
-            } else {
-                Button("Drop View…", role: .destructive) { onDropTable(table) }
-            }
-        }
+    @ViewBuilder private var menu: some View {
+        Button("Open Table") { open() }
+        Button("Go to DDL") { tabs.openDDL(dataSource: config, schema: table.schema, table: table.name) }
+        Divider()
+        Button("Copy Name") { copyToPasteboard(table.name) }
+        Button("Copy Qualified Name") { copyToPasteboard("\(table.schema).\(table.name)") }
+        Divider()
+        Button(table.kind == .view ? "Drop View…" : "Drop Table…", role: .destructive) { onDropTable(table) }
     }
 }
+
+// MARK: - Column row
 
 private struct ColumnRow: View {
     let column: DBColumnInfo
@@ -425,21 +486,18 @@ private struct ColumnRow: View {
     private var isFK: Bool { foreignKeys.contains { $0.columns.contains(column.name) } }
 
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: column.isPrimaryKey ? ObjectIcon.primaryKey : (isFK ? ObjectIcon.foreignKey : ObjectIcon.column))
-                .font(.system(size: 10))
-                .foregroundStyle(column.isPrimaryKey ? Color(red: 0.85, green: 0.73, blue: 0.34)
-                                 : (isFK ? Color(red: 0.55, green: 0.65, blue: 0.85) : Theme.dimText))
-            Text(column.name).font(Theme.uiFont)
-            Text(columnDetail)
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.dimText)
-                .lineLimit(1)
-        }
-        .help(columnHelp)
-        .contextMenu {
-            Button("Copy Name") { copyToPasteboard(column.name) }
-        }
+        TreeRow(
+            level: 3,
+            icon: column.isPrimaryKey ? ObjectIcon.primaryKey : (isFK ? ObjectIcon.foreignKey : ObjectIcon.column),
+            iconColor: column.isPrimaryKey ? Color(red: 0.85, green: 0.73, blue: 0.34)
+                       : (isFK ? Color(red: 0.55, green: 0.65, blue: 0.85) : Theme.dimText),
+            label: column.name,
+            help: columnHelp,
+            trailing: {
+                Text(columnDetail).font(.system(size: 10)).foregroundStyle(Theme.dimText).lineLimit(1)
+            },
+            menu: { Button("Copy Name") { copyToPasteboard(column.name) } }
+        )
     }
 
     private var columnHelp: String {

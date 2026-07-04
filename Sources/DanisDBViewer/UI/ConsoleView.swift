@@ -148,22 +148,24 @@ struct ConsoleView: View {
             HStack(spacing: 0) {
                 ForEach(Array(results.enumerated()), id: \.element.id) { idx, result in
                     let isSelected = (selectedResult?.id == result.id)
-                    HStack(spacing: 5) {
-                        if result.error != nil {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 9)).foregroundStyle(.red)
+                    Button { selectedResultID = result.id } label: {
+                        HStack(spacing: 5) {
+                            if result.error != nil {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 9)).foregroundStyle(.red)
+                            }
+                            Text("Result \(idx + 1)")
+                                .font(.system(size: 11))
                         }
-                        Text("Result \(idx + 1)")
-                            .font(.system(size: 11))
+                        .padding(.horizontal, 10)
+                        .frame(height: 24)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 10)
-                    .frame(height: 24)
+                    .buttonStyle(.plain)
                     .background(isSelected ? Theme.editorBackground : Theme.toolWindowBackground)
                     .overlay(alignment: .bottom) {
                         if isSelected { Rectangle().fill(Theme.accent).frame(height: 2) }
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectedResultID = result.id }
                 }
                 Spacer()
             }
@@ -395,16 +397,20 @@ private struct HistoryPopover: View {
             TextField("Filter history", text: $filter)
                 .textFieldStyle(.roundedBorder)
             List(filtered) { entry in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.sql)
-                        .font(Theme.monoFont)
-                        .lineLimit(3)
-                    Text("\(entry.dataSourceName) · \(entry.date.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Theme.dimText)
+                // Button, not onTapGesture — List swallows row taps.
+                Button { onPick(entry.sql) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.sql)
+                            .font(Theme.monoFont)
+                            .lineLimit(3)
+                        Text("\(entry.dataSourceName) · \(entry.date.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.dimText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
-                .onTapGesture { onPick(entry.sql) }
+                .buttonStyle(.plain)
             }
             .listStyle(.plain)
             HStack {
