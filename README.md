@@ -6,6 +6,8 @@ staged changes, and SQL consoles — in a Darcula-flavored UI.
 
 ![table editor](docs/table.png)
 
+![sql console](docs/console.png)
+
 ## Supported databases
 
 | DBMS | Driver |
@@ -33,6 +35,16 @@ staged changes, and SQL consoles — in a Darcula-flavored UI.
   affected-row counts, per-statement errors, execution times, persisted query
   history.
 - **DDL viewer** for tables and views.
+- **IntelliJ import**: `python3 scripts/import-intellij.py <project>/.idea` pulls
+  your existing IntelliJ data sources (hosts, ports, users — passwords stay in
+  IntelliJ's keychain; enter them once in the app).
+
+## Security
+
+No credentials ever touch the repo or the config file: passwords are stored
+only in the macOS Keychain (service `com.danis.dbviewer`), keyed by connection
+id. `connections.json` holds hosts/users only and lives in
+`~/Library/Application Support/DanisDBViewer/`.
 
 ## Build & run
 
