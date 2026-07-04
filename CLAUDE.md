@@ -1,124 +1,83 @@
 # Dani's DB Viewer — project guide
 
-Native **macOS SwiftUI/AppKit** app cloning IntelliJ IDEA's Database tool window.
-Multiple data sources (SQLite / PostgreSQL / MySQL), schema explorer, editable
-data grid with staged changes, SQL consoles. Darcula-styled.
+Browser clone of IntelliJ IDEA's Database tool window, Darcula-styled.
+React + virtualized grid in the browser; a local Node proxy (`web/server/index.mjs`)
+connects to the real databases (SQLite / PostgreSQL / MySQL).
 
 Repo: https://github.com/bersling/danis-db-viewer (public — **never commit secrets**).
 
-## Build / run / test / package
+The original native SwiftUI app was removed in favor of this web version; it
+lives in git history (up to tag-less commit `2998ca6` and earlier).
+
+## Build / run / test
 
 ```bash
-swift build                      # debug build
-swift run                        # or: .build/debug/DanisDBViewer
-swift test                       # unit tests (SQLSplitter, DBValue, grid model, diagnostics)
-./scripts/make-app.sh            # release build → dist/…app, installs to /Applications, writes ~/.local/bin/ddv
-ddv                              # launch the installed app (ddv <file.sqlite> opens a file)
+cd web
+npm install
+npm run build            # tsc + vite build → dist/
+npm run serve            # proxy + built app on http://localhost:8787
+npm run dev              # Vite dev server on :5173 (proxy must be running for /api)
+node test-remote.mjs out.png   # headless-Chromium smoke test against :8787
 ```
 
-- Toolchain: Swift 6 / Xcode 16+, macOS 14+. SwiftPM, **no .xcodeproj**.
-- Deps: PostgresNIO, MySQLNIO (SPM). SQLite uses system `libsqlite3` (`import SQLite3`).
-- Do **not** install packages on the host (user rule) — use Docker for DB test instances.
+- Node ≥ 22.5 required (`node:sqlite`). Deps: pg, mysql2, react,
+  @tanstack/react-virtual, @uiw/react-codemirror, playwright (dev).
+- Do **not** install packages globally on the host (user rule); project-scoped
+  `npm install` inside `web/` is fine. Use Docker for DB test instances.
 
 ## Layout
 
 ```
-Sources/DanisDBViewer/
-  Model/     DataSourceConfig, DBValue, Schema (introspection + QueryResult)
-  Drivers/   DatabaseDriver protocol + SQLite/Postgres/MySQL; ConnectionDiagnostics
-  SQL/       SQLSplitter, DDLGenerator, Exporter (CSV/JSON/INSERT)
-  Services/  ConnectionStore, SessionRegistry, Keychain, QueryHistoryStore, AppServices
-  UI/        MainView, ExplorerView, EditorAreaView, TableEditorView, DataGridView,
-             ConsoleView, SQLEditor (NSTextView), DataSourceDialog, DDLView, StructureView, Theme
+web/
+  server/index.mjs    local proxy: /api/connections, /api/introspect, /api/query, /api/test;
+                      serves dist/; one cached pool per connection id, dropped on error
+  src/
+    App.tsx           tabs (table/console), TableView (SELECT builder, dialect-aware quoting)
+    components/       Explorer.tsx (tree), DataGrid.tsx (virtualized), Console.tsx (CodeMirror)
+    db/               RemoteClient.ts (fetch wrapper), types.ts (shared model)
+scripts/              import-intellij.py (IntelliJ → connections.json),
+                      inject-passwords.sh (GitLab CI vars → secrets.json, never echoed)
+SampleData/           chinook-mini.db (sample SQLite)
 ```
-
-- `AppServices.shared` holds the singletons (view-model `StateObject` inits need
-  direct access, since they can't read `@EnvironmentObject`).
-- Passwords: plaintext `secrets.json` (`{uuid: password}`, chmod 600) in
-  `~/Library/Application Support/DanisDBViewer/` — see `SecretStore`. NOT the
-  Keychain (its ACL re-prompts on every signature change) and NOT the repo.
-  `connections.json` (same dir) holds host/user only.
 
 ## Persisted state (outside the repo)
 
-`~/Library/Application Support/DanisDBViewer/connections.json` + `history.json`;
-passwords in Keychain. Deleting these resets the app.
+`~/Library/Application Support/DanisDBViewer/`:
+- `connections.json` — connection configs (host/port/user, no passwords)
+- `secrets.json` — `{uuid: password}`, chmod 600
 
-## Testing the GUI
+Read server-side by the proxy on every request; passwords never reach the
+browser (`/api/connections` strips them). The browser itself persists nothing —
+tabs/tree/results are in-memory React state.
 
-Terminal has **Accessibility permission** (granted 2026-07-04), so real synthetic
-**mouse clicks** via System Events work. Synthetic **keystrokes** are flaky
-(`-10000 not allowed assistive access`) — clicks are reliable, keystrokes aren't.
+DB passwords live as GitLab CI/CD variables in project `taskbase/tb` on
+`code.taskbase.com` (e.g. `LAP_DB_PASSWORD_DEV`) — inject with
+`scripts/inject-passwords.sh`; never print a password value.
 
-Two complementary approaches — see the `ddv-testing` skill for full detail:
-1. **Automation env-var hooks** (invoke the same code paths a gesture would):
-   `DANIS_DS=<name>`, `DANIS_OPEN_TABLE=<name>`, `DANIS_OPEN_CONSOLE=1`,
-   `DANIS_SQL=<script>`, `DANIS_COMPLETE=<partial>`, `DANIS_STRUCTURE=1`,
-   `DANIS_WINFRAME=x,y,w,h`.
-2. **Real clicks + screenshots**: get row/element screen positions via System
-   Events `entire contents`/`position`, `click at {x,y}`, then
-   `screencapture -l $(swift scripts/windowid.swift DanisDBViewer)`.
+## Testing
 
-`swift test` is the strongest signal. Postgres/MySQL integration + live-diagnostics
-tests are gated on `DANIS_IT_PG=1` / `DANIS_IT_MYSQL=1` with Docker containers
-(ports 55432 / 53306, password `secret`) — see README.
+Playwright headless Chromium (`web/test-remote.mjs`) against the proxy on :8787 —
+see the `ddv-testing` skill. Postgres/MySQL test instances: Docker containers on
+ports 55432 / 53306, password `secret`. Docker Desktop crashes if launched while
+the screen is locked — ask the user to start it. Avoid reading
+`~/Library/Group Containers/group.com.docker/*` (TCC prompt hangs the shell).
 
 ## Conventions the user cares about (learned)
 
-- **Single-click** to open/navigate; click-to-select + second-click-or-Enter to
-  edit cells. Double-click only as an optional fast path, never required.
-- **No hover highlights / cursor changes** — match IntelliJ's flat tool-window look.
-- Every icon button needs a real hit target (≥26×24pt) — use `IconButtonStyle`
-  (`.buttonStyle(.icon)`), not bare `.borderless` on a glyph.
-- When the user questions a UI pattern, **check what IntelliJ actually does** — that's
-  the tiebreaker.
+- **Single-click** to select/expand; double-click opens a table. Match what
+  IntelliJ actually does — that's the tiebreaker for any UI question.
+- **No hover highlights / cursor changes** — IntelliJ's flat tool-window look.
+- Generous click targets; no dead gaps between tree rows.
 
 ## Gotchas
 
-- Two-axis `ScrollView` centers undersized content — pin grids with
-  `.frame(minWidth: geo.width, minHeight: geo.height, alignment: .topLeading)`
-  and `LazyVStack(alignment: .leading)`.
-- Docker Desktop crashes if launched while the screen is locked — ask the user to
-  start it; don't grind on relaunching. Avoid reading
-  `~/Library/Group Containers/group.com.docker/*` (TCC prompt hangs the shell).
-- **NIO connections (MySQLNIO/PostgresNIO) trap in `deinit` if deallocated
-  without `close()`.** Any timeout/race around connect MUST close the losing
-  connection (see `ConnectionDiagnostics.withConnectTimeout`, which awaits the
-  late connect and closes it). Dropping an in-flight connection = SIGTRAP crash.
-- **Introspect in batched queries, not per-schema loops.** A remote DB over VPN
-  with N schemas × 4 queries is dozens of round-trips (AilaDev = 11 schemas → was
-  ~30s+ and hit the connect timeout). MySQL introspect now does 5 queries total
-  keyed by schema+table; Postgres still loops per-schema (batch it too if slow).
-  If `config.database` is set, scope introspection to it.
-- **Passwords moved off the Keychain to a plaintext file** (see SecretStore) —
-  the Keychain ACL re-prompted (with a login-password field) on every code-sig
-  change, which never stabilized enough in practice. The stable self-signed
-  identity in `make-app.sh`/`make-signing-identity.sh` is still used for the app
-  bundle, but passwords no longer depend on it.
-- **Empty MySQL tables show no columns** unless you fall back to introspected
-  columns — MySQLNIO exposes column metadata only via the first row.
-  TableGridModel.load handles this.
-- **`onTapGesture` is swallowed inside `List` AND inside `ScrollView`+`LazyVStack`
-  — use `Button` for any row/cell click.** This bit us repeatedly (tree, editor
-  tabs, console result tabs, history, grid cells). The tree is now a plain
-  `ScrollView`+`VStack` of `TreeRow`s (each a full-width `Button`, fixed 24pt
-  height, chevron as an overlay `Button`) — NOT a `List`, because List imposes
-  its own row spacing/insets that leave unclickable gaps and can't be removed
-  (`listRowSpacing` is unavailable on macOS; `listRowInsets` ignored on nested
-  DisclosureGroup rows).
-- Full-width flat selection highlight (no rounded pill) so rows are flush with no
-  dead space between them.
-- SwiftUI tree rows still expose little to accessibility (custom Buttons, no
-  labels) — drive by computed position in tests, not by name.
-- Control-click on a tree row currently toggles expand instead of only showing the
-  context menu (the `.onTapGesture` eats it) — known bug to fix.
-
-## Utilities
-
-- `scripts/import-intellij.py <.idea dir>` — import IntelliJ data sources (host/port/
-  user; no passwords) into connections.json, keyed by IntelliJ UUID.
-- `scripts/inject-passwords.sh <map.tsv>` — stream GitLab CI/CD variable values
-  straight into the Keychain without printing them. DB passwords live as GitLab
-  CI/CD variables in project `taskbase/tb` on `code.taskbase.com`
-  (e.g. `LAP_DB_PASSWORD_DEV`).
-- `scripts/make-icon.swift <out.icns>` — regenerate the app icon.
+- **Remote DBs need the VPN.** A 25s `ETIMEDOUT` from the proxy usually means
+  VPN down, not a bug. On query error the proxy drops the cached pool
+  (`dropDriver`) so the next attempt reconnects; the Explorer re-fetches when an
+  errored connection is expanded again or its error row is clicked.
+- **`node:sqlite` returns column names only when there are rows** — empty
+  SELECTs re-derive them via a `LIMIT 0` wrapper (`columnNamesSqlite`).
+- Quote identifiers per dialect: backticks for MySQL, double quotes otherwise
+  (`quoteId` in App.tsx); SQLite targets are unqualified (no schema prefix).
+- Introspection is batched (3 queries per connection for PG/MySQL), not
+  per-schema loops — remote DBs over VPN are latency-bound (AilaDev = 11 schemas).

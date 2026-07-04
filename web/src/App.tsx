@@ -60,7 +60,7 @@ export function App() {
   return (
     <div className="app">
       <div className="titlebar">
-        <span className="title">Dani's DB Viewer <span style={{ color: "var(--dim)", fontWeight: 400 }}>· Web / WASM</span></span>
+        <span className="title">Dani's DB Viewer</span>
         <button onClick={openConsole} disabled={!connections.length}>New Console</button>
         <span className="spacer" />
         <span className="info" style={{ color: "var(--dim)", fontSize: 11 }}>{status}</span>
@@ -79,7 +79,7 @@ export function App() {
             <div className="empty">
               <div style={{ fontSize: 40, opacity: 0.4 }}>🗄</div>
               <div>Double-click a table, or open a query console</div>
-              <div style={{ fontSize: 12 }}>Same SQLite / PostgreSQL / MySQL connections as the native app, via a local proxy.</div>
+              <div style={{ fontSize: 12 }}>SQLite / PostgreSQL / MySQL, via the local proxy.</div>
             </div>
           ) : (
             <>

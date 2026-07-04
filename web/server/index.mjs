@@ -1,8 +1,8 @@
-// Local proxy for Dani's DB Viewer (web). A browser can't open raw TCP, so this
+// Local proxy for Dani's DB Viewer. A browser can't open raw TCP, so this
 // tiny Node server sits on localhost and proxies queries to Postgres / MySQL /
-// SQLite. It reads the SAME connection list + passwords the native app uses
-// (~/Library/Application Support/DanisDBViewer/), so all your data sources show
-// up with no re-entry. Passwords stay server-side — never sent to the browser.
+// SQLite. Connections come from connections.json + secrets.json in
+// ~/Library/Application Support/DanisDBViewer/. Passwords stay server-side —
+// they are never sent to the browser.
 import http from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import os from "node:os";

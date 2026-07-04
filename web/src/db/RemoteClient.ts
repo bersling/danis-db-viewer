@@ -1,8 +1,8 @@
 import type { Connection, SchemaInfo, QueryResult } from "./types";
 
 /// Talks to the local proxy (server/index.mjs), which connects to the real
-/// Postgres / MySQL / SQLite databases from your connections.json. Mirrors the
-/// native app's driver: list connections, introspect, query.
+/// Postgres / MySQL / SQLite databases from your connections.json:
+/// list connections, introspect, query.
 export class RemoteClient {
   async connections(): Promise<Connection[]> {
     const r = await fetch("/api/connections");

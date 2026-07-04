@@ -1,89 +1,79 @@
 # Dani's DB Viewer
 
-A native macOS clone of IntelliJ IDEA's **Database** tool window, written in
-SwiftUI/AppKit. Multiple data sources, schema explorer, editable data grid with
-staged changes, and SQL consoles — in a Darcula-flavored UI.
-
-> There's also a **browser/WASM version** in [`web/`](web/) — SQLite compiled to
-> WebAssembly + a virtualized React grid (100k rows at 60fps, no backend). See
-> [web/README.md](web/README.md).
+A browser clone of IntelliJ IDEA's **Database** tool window, Darcula-styled.
+React + a virtualized data grid in the browser, with a tiny local Node proxy
+that connects to the real databases. Multiple data sources (SQLite /
+PostgreSQL / MySQL), lazy schema explorer, 100k-row grids at 60fps, SQL
+consoles with schema-aware completion.
 
 ![table editor](docs/table.png)
 
 ![sql console](docs/console.png)
 
-## Supported databases
+## How it works
 
-| DBMS | Driver |
-|---|---|
-| SQLite | system `libsqlite3` |
-| PostgreSQL | [PostgresNIO](https://github.com/vapor/postgres-nio) |
-| MySQL / MariaDB | [MySQLNIO](https://github.com/vapor/mysql-nio) |
+A browser tab can't open raw TCP sockets, so a small local proxy
+(`web/server/index.mjs`) bridges the gap:
+
+```
+browser (React, virtualized grid)  ──HTTP──  localhost proxy  ──TCP──  Postgres / MySQL
+                                                    └──────── node:sqlite ── .db files
+```
+
+- **SQLite** — Node's built-in `node:sqlite` (opens the file directly)
+- **PostgreSQL** — [`pg`](https://www.npmjs.com/package/pg)
+- **MySQL / MariaDB** — [`mysql2`](https://www.npmjs.com/package/mysql2)
+
+The grid (`@tanstack/react-virtual`) keeps only the ~50 visible rows in the
+DOM, so 100k+ row result sets scroll smoothly.
+
+## Run
+
+```bash
+cd web
+npm install
+npm run build       # build the app into dist/
+npm run serve       # proxy serves the app + /api on http://localhost:8787
+```
+
+For development with hot reload, run the proxy and Vite side by side:
+
+```bash
+npm run serve       # proxy on :8787
+npm run dev         # UI on :5173, /api proxied to :8787
+```
+
+## Connections & passwords
+
+Connection definitions live in
+`~/Library/Application Support/DanisDBViewer/connections.json`; passwords in
+`secrets.json` next to it (`{"<connection-uuid>": "<password>"}`, `chmod 600`).
+Both are read server-side by the proxy — **passwords are never sent to the
+browser**, and neither file is ever committed (this is a public repo).
+
+- `scripts/import-intellij.py <path-to-.idea>` — import IntelliJ data sources
+  (host/port/user; no passwords) into `connections.json`.
+- `scripts/inject-passwords.sh <map.tsv>` — write passwords into `secrets.json`
+  without echoing them anywhere.
+
+A sample SQLite database is included at `SampleData/chinook-mini.db` — point a
+`sqlite` connection's `filePath` at it to try the app with zero setup.
 
 ## Features
 
-- **Data sources**: add / edit / duplicate / remove; Test Connection; per-source
-  color labels; passwords in the macOS Keychain; config persisted in
-  `~/Library/Application Support/DanisDBViewer/`.
-- **Explorer tree**: schemas → tables / views → columns (PK/FK markers, types),
-  indexes, foreign keys; speed search; refresh; context menus (open, console,
-  DDL, copy name, drop).
-- **Table editor**: pagination (10–1000 rows/page), header-click sorting
-  (asc → desc → none), raw `WHERE` filter field, inline cell editing,
-  add/delete rows — all staged IntelliJ-style and applied in one transaction on
-  Submit (⌘⏎), with color-coded pending changes; record (transpose) view;
-  value viewer; export CSV / JSON / SQL INSERTs.
-- **SQL console**: per-source consoles with syntax highlighting,
-  schema-aware completion (Esc/F5 completion via NSTextView), run statement at
-  caret / selection / whole script (⌘⏎), one result tab per statement,
-  affected-row counts, per-statement errors, execution times, persisted query
-  history.
-- **DDL viewer** for tables and views.
-- **IntelliJ import**: `python3 scripts/import-intellij.py <project>/.idea` pulls
-  your existing IntelliJ data sources (hosts, ports, users — passwords stay in
-  IntelliJ's keychain; enter them once in the app).
+- **Explorer tree**: connections → schemas → tables/views, lazily introspected
+  on expand; per-source color stripes; search filter; failed connections show
+  the error inline and retry on click.
+- **Table view**: virtualized grid, header-click sorting (asc → desc → none),
+  raw `WHERE` filter, row count + query timing in the status bar.
+- **SQL console**: CodeMirror with dialect-aware highlighting
+  (SQLite/PostgreSQL/MySQL) and schema-aware completion, ⌘⏎ to run,
+  virtualized results.
 
-## Security
-
-No credentials ever touch the repo. Passwords live in a plaintext file
-**outside the repo** — `~/Library/Application Support/DanisDBViewer/secrets.json`
-(`chmod 600`, `{ "<connection-uuid>": "<password>" }`) — the same model as
-`~/.pgpass` or a local `.env`. `connections.json` (same dir) holds hosts/users
-only. `secrets.json`/`.env` are also gitignored defensively.
-
-(Earlier versions used the macOS Keychain, but its ACL re-prompts every time the
-app's code signature changes; run `scripts/keychain-to-file.sh` once to migrate.)
-
-## Build & run
+## Verify
 
 ```bash
-swift run                    # debug run
-./scripts/make-app.sh        # package dist/Dani's DB Viewer.app
-swift test                   # unit + (env-gated) integration tests
+cd web
+npm run build && npm run serve &
+node test-remote.mjs out.png    # headless Chromium: expands a connection, opens a table, screenshots
 ```
-
-Requires Xcode 16+ / Swift 6 toolchain, macOS 14+.
-
-## Try it with sample data
-
-`SampleData/chinook-mini.db` ships in the repo — add a SQLite data source
-pointing at it. For Postgres/MySQL test instances:
-
-```bash
-docker run -d --name danis-pg -e POSTGRES_PASSWORD=secret -p 55432:5432 postgres:16-alpine
-docker run -d --name danis-mysql -e MYSQL_ROOT_PASSWORD=secret -e MYSQL_DATABASE=shop -p 53306:3306 mysql:8.4
-```
-
-## Architecture
-
-```
-Sources/DanisDBViewer/
-  Model/      DataSourceConfig, DBValue, schema/result types
-  Drivers/    DatabaseDriver protocol + SQLite / Postgres / MySQL impls
-  SQL/        statement splitter, DDL generator, exporters
-  Services/   connection store, live sessions, keychain, query history
-  UI/         explorer tree, tabs, data grid, SQL console, dialogs
-```
-
-Automation hooks for testing/screenshots: `DANIS_OPEN_TABLE=<name>`,
-`DANIS_OPEN_CONSOLE=1`, `DANIS_SQL=<script>`, `DANIS_WINFRAME=x,y,w,h`.

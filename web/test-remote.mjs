@@ -1,10 +1,11 @@
 import { chromium } from "playwright";
 const SHOT = process.argv[2] || "/tmp/web-remote.png";
+const BASE = process.env.DDV_URL || "http://localhost:8787";
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1300, height: 820 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
-await page.goto("http://localhost:8787/", { waitUntil: "networkidle" });
+await page.goto(BASE + "/", { waitUntil: "networkidle" });
 await page.waitForFunction(() => document.body.innerText.includes("connections"), { timeout: 15000 });
 console.log("status:", await page.locator(".titlebar .info").innerText());
 console.log("connections in tree:", await page.locator(".tree .row").count());

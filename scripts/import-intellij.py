@@ -7,7 +7,7 @@ Parses .idea/dataSources.xml (+ dataSources.local.xml for usernames) and merges
 the connections into ~/Library/Application Support/DanisDBViewer/connections.json.
 IntelliJ UUIDs are kept as connection ids, so re-running updates instead of
 duplicating. Passwords are NOT imported (they live in IntelliJ's keychain) —
-enter them once in the app; they'll be stored in its own keychain entry.
+inject them into secrets.json with scripts/inject-passwords.sh.
 """
 import json
 import re

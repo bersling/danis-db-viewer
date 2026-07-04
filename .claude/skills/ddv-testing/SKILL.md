@@ -1,79 +1,63 @@
 ---
 name: ddv-testing
-description: Drive and verify Dani's DB Viewer (native macOS SwiftUI DB app). Use when building, testing, screenshotting, or click-driving this app — covers env-var automation hooks, real synthetic clicks via System Events, window-only screenshots, and the gated Postgres/MySQL integration tests.
+description: Drive and verify Dani's DB Viewer (React web app + local Node proxy). Use when building, testing, or screenshotting this app — covers the build/serve loop, headless-Chromium (Playwright) verification, and the Dockerized Postgres/MySQL test instances.
 ---
 
 # Testing Dani's DB Viewer
 
-Two ways to exercise the app; combine them. `swift test` is the strongest signal.
-
-## 1. Automation env-var hooks (code-path level)
-
-These invoke the exact code a real gesture triggers. Set on launch:
-
-| Var | Effect |
-|-----|--------|
-| `DANIS_DS=<name>` | target this connection (else first) |
-| `DANIS_OPEN_TABLE=<name>` | open that table in the grid |
-| `DANIS_OPEN_CONSOLE=1` | open a query console |
-| `DANIS_SQL=<script>` | seed the console and run it |
-| `DANIS_COMPLETE=<partial>` | focus editor, set partial word, force the completion popup |
-| `DANIS_STRUCTURE=1` | open table in Structure view |
-| `DANIS_WINFRAME=x,y,w,h` | position/size the window (predictable screenshots) |
-
-Example:
-```bash
-pkill -f DanisDBViewer; sleep 1
-DANIS_DS=chinook-mini DANIS_OPEN_TABLE=tracks DANIS_WINFRAME=40,60,1240,820 \
-  .build/debug/DanisDBViewer >/dev/null 2>&1 &
-sleep 4
-```
-Hooks live in `Sources/DanisDBViewer/UI/App.swift` (`runAutomationHooks`),
-`ConsoleView.swift` (`DANIS_SQL`), `SQLEditor.swift` (`DANIS_COMPLETE`),
-`TableEditorView.swift` (`DANIS_STRUCTURE`).
-
-## 2. Window-only screenshots
+## Build + serve
 
 ```bash
-WID=$(swift scripts/windowid.swift DanisDBViewer)   # CGWindowID of frontmost window
-screencapture -x -l"$WID" out.png
+cd web
+npm run build                      # tsc -b && vite build → catches type errors
+node server/index.mjs &            # proxy + static app on http://localhost:8787
 ```
-`scripts/windowid.swift` prints the layer-0 window id for an app by name. Use the
-bundle display name `"Dani's DB Viewer"` for the installed .app, `DanisDBViewer`
-for `swift run`/debug builds.
 
-## 3. Real synthetic clicks (Terminal has Accessibility permission)
+`npm run build` is the strongest cheap signal (full type-check). The proxy reads
+`~/Library/Application Support/DanisDBViewer/{connections.json,secrets.json}`
+live on every request — no restart needed after editing connections.
 
-Clicks are **reliable**; synthetic keystrokes are **flaky** (`-10000 not allowed
-assistive access`). Prefer clicks + hooks over keystrokes.
-
-Get element screen positions (points), then click:
-```bash
-osascript -e 'tell application "System Events" to tell process "DanisDBViewer" to get {position, size} of window 1'
-# enumerate rows: iterate `entire contents of window 1`, filter role "AXRow", read `position`
-osascript -e 'tell application "System Events" to click at {250, 478}'   # screen points
-```
-Tree rows have **no accessibility labels** (SwiftUI gap) — identify them by order
-(connections are sorted alphabetically) and computed Y (first row ~y=334, 32pt apart).
-Coordinate math off a retina+shadow screenshot is unreliable; use AX `position` instead.
-
-To type into the SQL editor, find its rect:
-```bash
-# iterate entire contents, role "AXTextArea" → position/size; click its center, then keystroke
-```
-If `keystroke` returns "not allowed assistive access", fall back to `DANIS_SQL` /
-`DANIS_COMPLETE`, or ask the user to type (they're at the machine).
-
-## 4. Real tests
+## Headless verification (Playwright, already in devDependencies)
 
 ```bash
-swift test                                        # unit
-DANIS_IT_PG=1 DANIS_IT_MYSQL=1 swift test         # + live driver + diagnostics
+node test-remote.mjs /tmp/shot.png   # expands chinook-mini, opens a table, screenshots
 ```
-Containers (from README): postgres:16 on 55432, mysql:8.4 on 53306, password `secret`.
-Docker Desktop must be started by the user (it crashes if launched while locked).
+
+Pattern for ad-hoc checks — drive by CSS class, capture pageerrors:
+
+```js
+import { chromium } from "playwright";
+const page = await (await chromium.launch()).newPage({ viewport: { width: 1300, height: 820 } });
+page.on("pageerror", e => console.log("PAGEERROR", e));
+await page.goto("http://localhost:8787/", { waitUntil: "networkidle" });
+await page.locator(".tree .row", { hasText: "chinook-mini" }).first().click();  // expand
+await page.locator(".tree .row", { hasText: "tracks" }).first().dblclick();     // open table
+await page.waitForSelector(".grid-row");
+await page.screenshot({ path: "/tmp/shot.png" });
+```
+
+Useful selectors: `.tree .row`, `.tab`, `.grid-row`, `.statusbar`, `.titlebar .info`,
+`.error-banner`, `.cm-content` (console editor).
+
+Virtualization assertion: a 100k-row table must keep only ~50 `.grid-row` nodes
+in the DOM.
+
+## API-level checks (skip the browser)
+
+```bash
+curl -s localhost:8787/api/connections | python3 -m json.tool
+curl -s -X POST localhost:8787/api/test -d '{"id":"<uuid>"}'
+curl -s -X POST localhost:8787/api/query -d '{"id":"<uuid>","sql":"SELECT 1"}'
+```
+
+## DB test instances
+
+Docker: `postgres:16` on **55432**, `mysql:8.4` on **53306**, password `secret`.
+Docker Desktop must be started by the user (it crashes if launched while the
+screen is locked). Remote (Taskbase) DBs need the VPN — a 25s ETIMEDOUT means
+VPN down, not a bug; expanding the errored connection again retries.
 
 ## Honesty rule
 
-Distinguish "real-test verified" (swift test, real click observed in a screenshot)
-from "code-path verified" (hook-triggered). Say which when reporting.
+Distinguish "real-test verified" (Playwright run, screenshot inspected, curl
+output) from "it compiles" (`npm run build`). Say which when reporting.
