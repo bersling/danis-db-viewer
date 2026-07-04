@@ -80,6 +80,15 @@ tests are gated on `DANIS_IT_PG=1` / `DANIS_IT_MYSQL=1` with Docker containers
 - Docker Desktop crashes if launched while the screen is locked — ask the user to
   start it; don't grind on relaunching. Avoid reading
   `~/Library/Group Containers/group.com.docker/*` (TCC prompt hangs the shell).
+- **NIO connections (MySQLNIO/PostgresNIO) trap in `deinit` if deallocated
+  without `close()`.** Any timeout/race around connect MUST close the losing
+  connection (see `ConnectionDiagnostics.withConnectTimeout`, which awaits the
+  late connect and closes it). Dropping an in-flight connection = SIGTRAP crash.
+- **Introspect in batched queries, not per-schema loops.** A remote DB over VPN
+  with N schemas × 4 queries is dozens of round-trips (AilaDev = 11 schemas → was
+  ~30s+ and hit the connect timeout). MySQL introspect now does 5 queries total
+  keyed by schema+table; Postgres still loops per-schema (batch it too if slow).
+  If `config.database` is set, scope introspection to it.
 - SwiftUI tree rows currently expose no accessibility labels (only roles) — an
   a11y gap; click tree rows by computed position, not by name.
 - Control-click on a tree row currently toggles expand instead of only showing the

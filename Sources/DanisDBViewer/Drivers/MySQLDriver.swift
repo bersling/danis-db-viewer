@@ -60,79 +60,95 @@ final class MySQLDriver: DatabaseDriver {
     // MARK: - Introspection
 
     func introspect() async throws -> DBIntrospection {
-        let dbRows = try await rawQuery("""
-            SELECT schema_name FROM information_schema.schemata
-            WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
-            ORDER BY schema_name
+        // Batch: 5 queries total across all non-system schemas (keyed by
+        // schema+table), instead of 4 per schema. On a remote DB over VPN the
+        // round-trip savings are the difference between seconds and a minute.
+        // If a specific database is configured, scope to it (much faster on
+        // big RDS instances with many databases).
+        let scope: String
+        if !config.database.isEmpty {
+            scope = "= \(DBValue.text(config.database).sqlLiteral)"
+        } else {
+            scope = "NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')"
+        }
+        func key(_ s: String, _ t: String) -> String { s + "\t" + t }
+
+        let dbRows = try await rawQuery(
+            "SELECT schema_name FROM information_schema.schemata WHERE schema_name \(scope) ORDER BY schema_name")
+        let tableRows = try await rawQuery("""
+            SELECT table_schema, table_name, table_type FROM information_schema.tables
+            WHERE table_schema \(scope) ORDER BY table_schema, table_name
             """)
+        let columnRows = try await rawQuery("""
+            SELECT table_schema, table_name, column_name, column_type, is_nullable, column_default,
+                   ordinal_position, column_key, extra
+            FROM information_schema.columns
+            WHERE table_schema \(scope) ORDER BY table_schema, table_name, ordinal_position
+            """)
+        let indexRows = try await rawQuery("""
+            SELECT table_schema, table_name, index_name, column_name, non_unique
+            FROM information_schema.statistics
+            WHERE table_schema \(scope) AND index_name != 'PRIMARY'
+            ORDER BY table_schema, table_name, index_name, seq_in_index
+            """)
+        let fkRows = try await rawQuery("""
+            SELECT table_schema, table_name, constraint_name, column_name,
+                   referenced_table_schema, referenced_table_name, referenced_column_name
+            FROM information_schema.key_column_usage
+            WHERE table_schema \(scope) AND referenced_table_name IS NOT NULL
+            ORDER BY table_schema, constraint_name, ordinal_position
+            """)
+
+        var colMap: [String: [DBColumnInfo]] = [:]
+        for row in columnRows.rows {
+            guard case .text(let s) = row[0], case .text(let t) = row[1], case .text(let name) = row[2] else { continue }
+            var col = DBColumnInfo(name: name, typeName: str(row[3]) ?? "")
+            col.isNullable = str(row[4])?.uppercased() == "YES"
+            col.defaultValue = str(row[5])
+            col.ordinal = Int(int(row[6]) ?? 0)
+            col.isPrimaryKey = str(row[7]) == "PRI"
+            col.isAutoIncrement = (str(row[8]) ?? "").contains("auto_increment")
+            colMap[key(s, t), default: []].append(col)
+        }
+        var idxMap: [String: [String: DBIndexInfo]] = [:]
+        for row in indexRows.rows {
+            guard case .text(let s) = row[0], case .text(let t) = row[1],
+                  case .text(let idx) = row[2], case .text(let c) = row[3] else { continue }
+            let k = key(s, t)
+            var info = idxMap[k]?[idx] ?? DBIndexInfo(name: idx, columns: [], isUnique: int(row[4]) == 0)
+            info.columns.append(c)
+            idxMap[k, default: [:]][idx] = info
+        }
+        var fkMap: [String: [String: DBForeignKeyInfo]] = [:]
+        for row in fkRows.rows {
+            guard case .text(let s) = row[0], case .text(let t) = row[1],
+                  case .text(let name) = row[2], case .text(let c) = row[3] else { continue }
+            let k = key(s, t)
+            var fk = fkMap[k]?[name] ?? DBForeignKeyInfo(
+                name: name, columns: [], referencedSchema: str(row[4]) ?? "",
+                referencedTable: str(row[5]) ?? "", referencedColumns: [])
+            fk.columns.append(c)
+            if let rc = str(row[6]) { fk.referencedColumns.append(rc) }
+            fkMap[k, default: [:]][name] = fk
+        }
+
+        var tablesBySchema: [String: [DBTableInfo]] = [:]
+        for row in tableRows.rows {
+            guard case .text(let s) = row[0], case .text(let name) = row[1] else { continue }
+            let type = str(row[2]) ?? ""
+            let k = key(s, name)
+            var table = DBTableInfo(schema: s, name: name, kind: type.contains("VIEW") ? .view : .table)
+            table.columns = colMap[k] ?? []
+            table.indexes = (idxMap[k] ?? [:]).values.sorted { $0.name < $1.name }
+            table.foreignKeys = (fkMap[k] ?? [:]).values.sorted { $0.name < $1.name }
+            tablesBySchema[s, default: []].append(table)
+        }
+
         var schemas: [DBSchemaInfo] = []
         for dbRow in dbRows.rows {
             guard case .text(let dbName) = dbRow[0] else { continue }
             var schema = DBSchemaInfo(name: dbName, isDefault: dbName == config.database)
-            let lit = DBValue.text(dbName).sqlLiteral
-
-            let tableRows = try await rawQuery("""
-                SELECT table_name, table_type FROM information_schema.tables
-                WHERE table_schema = \(lit) ORDER BY table_name
-                """)
-            let columnRows = try await rawQuery("""
-                SELECT table_name, column_name, column_type, is_nullable, column_default,
-                       ordinal_position, column_key, extra
-                FROM information_schema.columns
-                WHERE table_schema = \(lit) ORDER BY table_name, ordinal_position
-                """)
-            let indexRows = try await rawQuery("""
-                SELECT table_name, index_name, column_name, non_unique
-                FROM information_schema.statistics
-                WHERE table_schema = \(lit) AND index_name != 'PRIMARY'
-                ORDER BY table_name, index_name, seq_in_index
-                """)
-            let fkRows = try await rawQuery("""
-                SELECT table_name, constraint_name, column_name,
-                       referenced_table_schema, referenced_table_name, referenced_column_name
-                FROM information_schema.key_column_usage
-                WHERE table_schema = \(lit) AND referenced_table_name IS NOT NULL
-                ORDER BY constraint_name, ordinal_position
-                """)
-
-            var colMap: [String: [DBColumnInfo]] = [:]
-            for row in columnRows.rows {
-                guard case .text(let t) = row[0], case .text(let name) = row[1] else { continue }
-                var col = DBColumnInfo(name: name, typeName: str(row[2]) ?? "")
-                col.isNullable = str(row[3])?.uppercased() == "YES"
-                col.defaultValue = str(row[4])
-                col.ordinal = Int(int(row[5]) ?? 0)
-                col.isPrimaryKey = str(row[6]) == "PRI"
-                col.isAutoIncrement = (str(row[7]) ?? "").contains("auto_increment")
-                colMap[t, default: []].append(col)
-            }
-            var idxMap: [String: [String: DBIndexInfo]] = [:]
-            for row in indexRows.rows {
-                guard case .text(let t) = row[0], case .text(let idx) = row[1], case .text(let c) = row[2] else { continue }
-                var info = idxMap[t]?[idx] ?? DBIndexInfo(name: idx, columns: [], isUnique: int(row[3]) == 0)
-                info.columns.append(c)
-                idxMap[t, default: [:]][idx] = info
-            }
-            var fkMap: [String: [String: DBForeignKeyInfo]] = [:]
-            for row in fkRows.rows {
-                guard case .text(let t) = row[0], case .text(let name) = row[1], case .text(let c) = row[2] else { continue }
-                var fk = fkMap[t]?[name] ?? DBForeignKeyInfo(
-                    name: name, columns: [], referencedSchema: str(row[3]) ?? "",
-                    referencedTable: str(row[4]) ?? "", referencedColumns: [])
-                fk.columns.append(c)
-                if let rc = str(row[5]) { fk.referencedColumns.append(rc) }
-                fkMap[t, default: [:]][name] = fk
-            }
-
-            for row in tableRows.rows {
-                guard case .text(let name) = row[0] else { continue }
-                let type = str(row[1]) ?? ""
-                var table = DBTableInfo(schema: dbName, name: name, kind: type.contains("VIEW") ? .view : .table)
-                table.columns = colMap[name] ?? []
-                table.indexes = (idxMap[name] ?? [:]).values.sorted { $0.name < $1.name }
-                table.foreignKeys = (fkMap[name] ?? [:]).values.sorted { $0.name < $1.name }
-                schema.tables.append(table)
-            }
+            schema.tables = tablesBySchema[dbName] ?? []
             schemas.append(schema)
         }
         return DBIntrospection(schemas: schemas)
