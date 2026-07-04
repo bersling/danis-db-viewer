@@ -1,12 +1,32 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Which tree node is currently selected (IntelliJ: single-click selects,
+/// double-click opens). Uses manual click timing because SwiftUI's stacked
+/// count:1 / count:2 tap gestures conflict inside a DisclosureGroup label.
+final class TreeSelection: ObservableObject {
+    @Published var selectedID: String?
+    private var lastClickID: String?
+    private var lastClickAt = Date.distantPast
+
+    /// Register a click on `id`; returns true if it's a double-click (open).
+    func registerClick(_ id: String) -> Bool {
+        let now = Date()
+        let isDouble = (id == lastClickID) && now.timeIntervalSince(lastClickAt) < 0.5
+        selectedID = id
+        lastClickID = id
+        lastClickAt = now
+        return isDouble
+    }
+}
+
 /// The Database tool window: data source tree with speed search, toolbar,
 /// context menus.
 struct ExplorerView: View {
     @EnvironmentObject var connectionStore: ConnectionStore
     @EnvironmentObject var sessions: SessionRegistry
     @EnvironmentObject var tabs: TabManager
+    @StateObject private var selection = TreeSelection()
 
     @State private var searchText = ""
     @State private var editorTarget: DataSourceConfig?
@@ -30,6 +50,7 @@ struct ExplorerView: View {
             }
             .listStyle(.sidebar)
             .environment(\.defaultMinListRowHeight, 22)
+            .environmentObject(selection)
 
             if connectionStore.connections.isEmpty {
                 emptyHint
@@ -288,6 +309,7 @@ private struct SchemaNode: View {
 
 private struct TableNode: View {
     @EnvironmentObject var tabs: TabManager
+    @EnvironmentObject var selection: TreeSelection
 
     let config: DataSourceConfig
     let table: DBTableInfo
@@ -295,13 +317,24 @@ private struct TableNode: View {
 
     @State private var expanded = false
 
+    private var nodeID: String { "\(config.id)/\(table.schema).\(table.name)" }
+    private var isSelected: Bool { selection.selectedID == nodeID }
+
+    private func open() {
+        selection.selectedID = nodeID
+        tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
+    }
+
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            ForEach(table.columns) { col in
-                ColumnRow(column: col, foreignKeys: table.foreignKeys)
-            }
-            if !table.indexes.isEmpty {
-                DisclosureGroup {
+        // Custom expandable row (not DisclosureGroup) so the label's tap is ours:
+        // chevron expands, label single-click selects, double-click opens.
+        VStack(alignment: .leading, spacing: 0) {
+            row
+            if expanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(table.columns) { col in
+                        ColumnRow(column: col, foreignKeys: table.foreignKeys)
+                    }
                     ForEach(table.indexes) { idx in
                         HStack(spacing: 5) {
                             Image(systemName: ObjectIcon.index)
@@ -311,12 +344,6 @@ private struct TableNode: View {
                                 .font(.system(size: 10)).foregroundStyle(Theme.dimText)
                         }
                     }
-                } label: {
-                    Text("indexes").font(Theme.uiFont).foregroundStyle(Theme.dimText)
-                }
-            }
-            if !table.foreignKeys.isEmpty {
-                DisclosureGroup {
                     ForEach(table.foreignKeys) { fk in
                         HStack(spacing: 5) {
                             Image(systemName: ObjectIcon.foreignKey)
@@ -325,27 +352,53 @@ private struct TableNode: View {
                                 .font(.system(size: 11))
                         }
                     }
-                } label: {
-                    Text("keys").font(Theme.uiFont).foregroundStyle(Theme.dimText)
                 }
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: table.kind == .view ? ObjectIcon.view : ObjectIcon.table)
-                    .foregroundStyle(table.kind == .view ? Color(red: 0.65, green: 0.55, blue: 0.85) : Color(red: 0.75, green: 0.68, blue: 0.40))
-                    .font(.system(size: 11))
-                Text(table.name).font(Theme.uiFont)
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
+                .padding(.leading, 18)
             }
         }
-        .contextMenu {
-            Button("Open Table") {
-                tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
+    }
+
+    private var row: some View {
+        HStack(spacing: 5) {
+            Button {
+                expanded.toggle()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.dimText)
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(width: 12, height: 12)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            // Button (not onTapGesture) so clicks fire reliably inside the List.
+            // Manual timing: first click selects, second within 0.5s opens.
+            Button {
+                if selection.registerClick(nodeID) {
+                    tabs.openTable(dataSource: config, schema: table.schema, table: table.name)
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: table.kind == .view ? ObjectIcon.view : ObjectIcon.table)
+                        .foregroundStyle(table.kind == .view ? Color(red: 0.65, green: 0.55, blue: 0.85) : Color(red: 0.75, green: 0.68, blue: 0.40))
+                        .font(.system(size: 11))
+                    Text(table.name).font(Theme.uiFont)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isSelected ? Theme.selection : .clear)
+        )
+        .contextMenu {
+            Button("Open Table") { open() }
             Button("Go to DDL") {
                 tabs.openDDL(dataSource: config, schema: table.schema, table: table.name)
             }
