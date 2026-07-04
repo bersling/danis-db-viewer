@@ -12,7 +12,7 @@ struct TableEditorView: View {
     @State private var whereDraft = ""
     @State private var transposed = false
     @State private var viewedValue: String?
-    @State private var showStructure = false
+    @State private var showStructure = ProcessInfo.processInfo.environment["DANIS_STRUCTURE"] == "1"
 
     init(tab: EditorTab, dataSource: DataSourceConfig, schema: String, table: String) {
         self.tab = tab
