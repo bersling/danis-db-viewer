@@ -83,6 +83,13 @@ final class TableGridModel: ObservableObject {
             columnTypes = page.columnTypes
             rows = page.rows
             totalRows = page.totalRows
+            // Empty MySQL result sets carry no column metadata (MySQLNIO exposes
+            // columns only via the first row). Fall back to introspected columns
+            // so an empty table still shows its structure.
+            if columns.isEmpty, let info = tableInfo, !info.columns.isEmpty {
+                columns = info.columns.map(\.name)
+                columnTypes = info.columns.map(\.typeName)
+            }
             discardChanges()
         } catch {
             self.error = error.localizedDescription

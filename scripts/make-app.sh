@@ -37,7 +37,19 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP"
+# Sign with a stable self-signed identity (persists Keychain "Always Allow"
+# across rebuilds). Falls back to ad-hoc if the identity can't be created.
+IDENTITY_NAME="Dani's DB Viewer Self-Signed"
+bash "$(dirname "$0")/make-signing-identity.sh" || true
+# Sign by hash (the identity is untrusted-but-usable; -s by name needs trust).
+IDENTITY_HASH="$(security find-identity 2>/dev/null | grep -F "$IDENTITY_NAME" | head -1 | awk '{print $2}')"
+if [ -n "$IDENTITY_HASH" ]; then
+    codesign --force --deep --sign "$IDENTITY_HASH" --identifier com.danis.dbviewer "$APP"
+    echo "Signed with stable identity: $IDENTITY_NAME ($IDENTITY_HASH)"
+else
+    codesign --force --deep --sign - --identifier com.danis.dbviewer "$APP"
+    echo "Signed ad-hoc (no stable identity — Keychain grants won't persist across rebuilds)"
+fi
 echo "Built: $APP"
 
 # Install into /Applications so Spotlight/Launchpad find it and the icon registers.
