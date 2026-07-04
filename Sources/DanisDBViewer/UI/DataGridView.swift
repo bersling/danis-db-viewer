@@ -16,12 +16,13 @@ struct DataGridView: View {
     private let gutterWidth: CGFloat = 44
 
     var body: some View {
-        GeometryReader { _ in
+        GeometryReader { geo in
             ScrollView([.horizontal, .vertical]) {
-                VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 0) {
                     header
                     rowsView
                 }
+                .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
             }
         }
         .background(Theme.editorBackground)
@@ -76,7 +77,7 @@ struct DataGridView: View {
     // MARK: - Rows
 
     private var rowsView: some View {
-        LazyVStack(spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(0..<(model.rows.count + model.insertedRows.count), id: \.self) { row in
                 rowView(row)
             }

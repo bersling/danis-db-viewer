@@ -295,6 +295,7 @@ private struct ResultGrid: View {
     private let gutterWidth: CGFloat = 44
 
     var body: some View {
+        GeometryReader { geo in
         ScrollView([.horizontal, .vertical]) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 0) {
@@ -316,7 +317,7 @@ private struct ResultGrid: View {
                         .border(Theme.gridLine, width: 0.5)
                     }
                 }
-                LazyVStack(spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(result.rows.indices, id: \.self) { row in
                         HStack(spacing: 0) {
                             Text("\(row + 1)")
@@ -344,7 +345,8 @@ private struct ResultGrid: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
+        }
         }
         .sheet(isPresented: Binding(get: { viewedValue != nil }, set: { if !$0 { viewedValue = nil } })) {
             VStack(alignment: .leading, spacing: 8) {

@@ -39,6 +39,11 @@ struct ExplorerView: View {
         .sheet(item: $editorTarget) { target in
             DataSourceDialog(config: target)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .newDataSource)) { note in
+            if let kind = note.object as? DBKind {
+                editorTarget = DataSourceConfig.newDefault(kind: kind)
+            }
+        }
         .confirmationDialog(
             "Drop table \(confirmDrop?.table.name ?? "")?",
             isPresented: Binding(get: { confirmDrop != nil }, set: { if !$0 { confirmDrop = nil } })

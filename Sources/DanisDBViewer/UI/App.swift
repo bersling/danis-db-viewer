@@ -68,6 +68,34 @@ private func runAutomationHooks() async {
 
 struct AppCommands: Commands {
     var body: some Commands {
-        CommandGroup(replacing: .newItem) {}
+        CommandGroup(replacing: .newItem) {
+            Menu("New Data Source") {
+                ForEach(DBKind.allCases) { kind in
+                    Button(kind.displayName) {
+                        NotificationCenter.default.post(name: .newDataSource, object: kind)
+                    }
+                }
+            }
+        }
+        CommandMenu("Database") {
+            Button("Close Tab") {
+                AppServices.shared.tabs.closeSelected()
+            }
+            .keyboardShortcut("w", modifiers: [.command, .shift])
+            Button("Refresh All") {
+                Task {
+                    let services = AppServices.shared
+                    for config in services.connectionStore.connections
+                    where services.sessions.isConnected(config.id) {
+                        await services.sessions.refreshIntrospection(for: config)
+                    }
+                }
+            }
+            .keyboardShortcut("r", modifiers: [.command, .option])
+        }
     }
+}
+
+extension Notification.Name {
+    static let newDataSource = Notification.Name("danis.newDataSource")
 }

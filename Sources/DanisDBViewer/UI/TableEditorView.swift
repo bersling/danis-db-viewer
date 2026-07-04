@@ -12,6 +12,7 @@ struct TableEditorView: View {
     @State private var whereDraft = ""
     @State private var transposed = false
     @State private var viewedValue: String?
+    @State private var showStructure = false
 
     init(tab: EditorTab, dataSource: DataSourceConfig, schema: String, table: String) {
         self.tab = tab
@@ -36,6 +37,8 @@ struct TableEditorView: View {
                 Spacer()
                 ProgressView()
                 Spacer()
+            } else if showStructure, let info = model.tableInfo {
+                StructureView(info: info)
             } else if transposed {
                 TransposedView(model: model, selectedRows: $selectedRows)
             } else {
@@ -120,6 +123,16 @@ struct TableEditorView: View {
             .help("Transpose (record view)")
 
             exportMenu
+
+            Divider().frame(height: 16)
+
+            Picker("", selection: $showStructure) {
+                Text("Data").tag(false)
+                Text("Structure").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 150)
+            .controlSize(.small)
 
             Spacer()
 
