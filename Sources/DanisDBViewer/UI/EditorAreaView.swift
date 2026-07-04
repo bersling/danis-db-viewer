@@ -82,7 +82,7 @@ private struct TabButton: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .background(isSelected ? Theme.editorBackground : (hovering ? Color.white.opacity(0.05) : .clear))
+        .background(isSelected ? Theme.editorBackground : .clear)
         .overlay(alignment: .bottom) {
             if isSelected {
                 Rectangle().fill(Theme.accent).frame(height: 2)
@@ -90,10 +90,7 @@ private struct TabButton: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { tabs.selectedTabID = tab.id }
-        .onHover { isHovering in
-            hovering = isHovering
-            if isHovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
+        .onHover { hovering = $0 }
         .contextMenu {
             Button("Close") { tabs.close(tab) }
             Button("Close Others") {

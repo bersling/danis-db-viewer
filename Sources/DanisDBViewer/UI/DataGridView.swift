@@ -49,55 +49,36 @@ struct DataGridView: View {
                 .background(Theme.toolWindowBackground)
                 .border(Theme.gridLine, width: 0.5)
             ForEach(model.columns.indices, id: \.self) { col in
-                HeaderCell(model: model, col: col, width: widths[col], rowHeight: rowHeight,
-                           typeLabel: typeLabel(col), isPrimaryKey: isPrimaryKey(col))
-            }
-        }
-    }
-
-    private struct HeaderCell: View {
-        @ObservedObject var model: TableGridModel
-        let col: Int
-        let width: CGFloat
-        let rowHeight: CGFloat
-        let typeLabel: String
-        let isPrimaryKey: Bool
-        @State private var hovering = false
-
-        var body: some View {
-            Button {
-                model.cycleSort(column: col)
-            } label: {
-                HStack(spacing: 3) {
-                    if isPrimaryKey {
-                        Image(systemName: "key.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(Color(red: 0.85, green: 0.73, blue: 0.34))
+                Button {
+                    model.cycleSort(column: col)
+                } label: {
+                    HStack(spacing: 3) {
+                        if isPrimaryKey(col) {
+                            Image(systemName: "key.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(Color(red: 0.85, green: 0.73, blue: 0.34))
+                        }
+                        Text(model.columns[col])
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(typeLabel(col))
+                            .font(.system(size: 9))
+                            .foregroundStyle(Theme.dimText)
+                        if model.sortColumn == col {
+                            Image(systemName: model.sortDescending ? "chevron.down" : "chevron.up")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(Theme.accent)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Text(model.columns[col])
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(typeLabel)
-                        .font(.system(size: 9))
-                        .foregroundStyle(Theme.dimText)
-                    if model.sortColumn == col {
-                        Image(systemName: model.sortDescending ? "chevron.down" : "chevron.up")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Theme.accent)
-                    }
-                    Spacer(minLength: 0)
+                    .padding(.horizontal, 6)
+                    .frame(width: widths[col], height: rowHeight)
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 6)
-                .frame(width: width, height: rowHeight)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .background(Theme.toolWindowBackground)
+                .border(Theme.gridLine, width: 0.5)
+                .help("Click to sort")
             }
-            .buttonStyle(.plain)
-            .background(hovering ? Theme.selection.opacity(0.4) : Theme.toolWindowBackground)
-            .border(Theme.gridLine, width: 0.5)
-            .onHover { isHovering in
-                hovering = isHovering
-                if isHovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
-            .help("Click to sort")
         }
     }
 
