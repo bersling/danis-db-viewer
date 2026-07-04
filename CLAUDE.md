@@ -98,8 +98,18 @@ tests are gated on `DANIS_IT_PG=1` / `DANIS_IT_MYSQL=1` with Docker containers
 - **Empty MySQL tables show no columns** unless you fall back to introspected
   columns — MySQLNIO exposes column metadata only via the first row.
   TableGridModel.load handles this.
-- SwiftUI tree rows currently expose no accessibility labels (only roles) — an
-  a11y gap; click tree rows by computed position, not by name.
+- **`onTapGesture` is swallowed inside `List` AND inside `ScrollView`+`LazyVStack`
+  — use `Button` for any row/cell click.** This bit us repeatedly (tree, editor
+  tabs, console result tabs, history, grid cells). The tree is now a plain
+  `ScrollView`+`VStack` of `TreeRow`s (each a full-width `Button`, fixed 24pt
+  height, chevron as an overlay `Button`) — NOT a `List`, because List imposes
+  its own row spacing/insets that leave unclickable gaps and can't be removed
+  (`listRowSpacing` is unavailable on macOS; `listRowInsets` ignored on nested
+  DisclosureGroup rows).
+- Full-width flat selection highlight (no rounded pill) so rows are flush with no
+  dead space between them.
+- SwiftUI tree rows still expose little to accessibility (custom Buttons, no
+  labels) — drive by computed position in tests, not by name.
 - Control-click on a tree row currently toggles expand instead of only showing the
   context menu (the `.onTapGesture` eats it) — known bug to fix.
 
