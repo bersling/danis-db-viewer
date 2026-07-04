@@ -133,6 +133,7 @@ struct TableEditorView: View {
             .pickerStyle(.segmented)
             .frame(width: 150)
             .controlSize(.small)
+            .help("Switch between row data and the table's column/index/key structure")
 
             Spacer()
 

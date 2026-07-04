@@ -215,6 +215,7 @@ private struct DataSourceNode: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { expanded.toggle() }
+            .help("\(config.kind.displayName) data source" + (sessions.isConnected(config.id) ? " (connected)" : "") + " — click to expand")
         }
         .onChange(of: expanded) { _, isOpen in
             if isOpen && sessions.introspections[config.id] == nil {
@@ -303,6 +304,7 @@ private struct SchemaNode: View {
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.dimText)
             }
+            .help("Schema “\(schema.name)” — \(schema.tables.count) tables/views")
         }
     }
 }
@@ -389,6 +391,7 @@ private struct TableNode: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help("\(table.kind == .view ? "View" : "Table") “\(table.name)” — double-click to open, single-click to select")
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 4)
@@ -433,9 +436,19 @@ private struct ColumnRow: View {
                 .foregroundStyle(Theme.dimText)
                 .lineLimit(1)
         }
+        .help(columnHelp)
         .contextMenu {
             Button("Copy Name") { copyToPasteboard(column.name) }
         }
+    }
+
+    private var columnHelp: String {
+        var parts = ["Column “\(column.name)” · \(column.typeName.lowercased())"]
+        if column.isPrimaryKey { parts.append("primary key") }
+        if isFK { parts.append("foreign key") }
+        parts.append(column.isNullable ? "nullable" : "not null")
+        if column.isAutoIncrement { parts.append("auto-increment") }
+        return parts.joined(separator: " · ")
     }
 
     private var columnDetail: String {

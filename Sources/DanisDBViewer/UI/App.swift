@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // Show .help() tooltips almost immediately (default is ~1–2s).
+        UserDefaults.standard.set(100, forKey: "NSInitialToolTipDelay")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             applyWindowFrameOverride()
             Task { await runAutomationHooks() }

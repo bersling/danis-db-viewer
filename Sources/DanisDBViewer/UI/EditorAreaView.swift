@@ -81,6 +81,7 @@ private struct TabButton: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help("Close tab")
         }
         .padding(.horizontal, 10)
         .frame(height: 30)
