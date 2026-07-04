@@ -16,12 +16,18 @@ struct DataGridView: View {
     private let rowHeight: CGFloat = 22
     private let gutterWidth: CGFloat = 44
 
+    private var isEmpty: Bool { model.rows.isEmpty && model.insertedRows.isEmpty }
+
     var body: some View {
         GeometryReader { geo in
             ScrollView([.horizontal, .vertical]) {
                 VStack(alignment: .leading, spacing: 0) {
                     header
                     rowsView
+                    if isEmpty {
+                        emptyState
+                            .frame(minWidth: geo.size.width - 1, minHeight: geo.size.height - rowHeight - 40)
+                    }
                 }
                 .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
             }
@@ -37,6 +43,30 @@ struct DataGridView: View {
     }
 
     private var widths: [CGFloat] { columnWidths() }
+
+    // MARK: - Empty state
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "tray")
+                .font(.system(size: 30))
+                .foregroundStyle(Theme.dimText.opacity(0.6))
+            Text(model.whereClause.isEmpty ? "This table is empty" : "No rows match the filter")
+                .font(Theme.uiFont)
+                .foregroundStyle(Theme.dimText)
+            if model.whereClause.isEmpty {
+                Button {
+                    model.addRow()
+                } label: {
+                    Label("Add the first row", systemImage: "plus")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.accent)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
     // MARK: - Header
 
