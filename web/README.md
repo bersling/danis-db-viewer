@@ -55,13 +55,26 @@ src/
 engine (PGlite for Postgres-in-WASM, or DuckDB-WASM) can be added behind the
 same interface.
 
-## Constraint (by design)
+## Same databases as the native app (via a local proxy)
 
-A browser tab can't open raw TCP sockets, so it can't connect directly to remote
-Postgres/MySQL — that needs a proxy backend. This build focuses on the genuinely
-web-native case: **local databases running entirely in the browser** (the
-SQLite/Turso/Supabase-MVP sweet spot). The native macOS app in the repo root
-covers live remote Postgres/MySQL.
+A browser tab can't open raw TCP sockets, so it can't reach Postgres/MySQL
+directly. A tiny local Node proxy (`server/index.mjs`) bridges that gap — and it
+reads the **same** `connections.json` + `secrets.json` the native app uses, so
+all your data sources appear with no re-entry. Passwords stay server-side and are
+never sent to the browser.
+
+```bash
+npm run build       # build the web app
+npm run serve       # proxy serves the app + /api on http://localhost:8787
+```
+
+The proxy handles all three engines:
+- **SQLite** — Node's built-in `node:sqlite` (opens the file directly)
+- **PostgreSQL** — `pg`
+- **MySQL** — `mysql2`
+
+For local `.db` files with zero backend, the in-browser SQLite-WASM engine
+(`src/db/sqliteWorker.ts`) is still included and can be wired to an upload button.
 
 ## Verify
 

@@ -11,4 +11,7 @@ export default defineConfig({
   worker: {
     format: "es",
   },
+  server: {
+    proxy: { "/api": "http://localhost:8787" },
+  },
 });

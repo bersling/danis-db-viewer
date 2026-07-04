@@ -1,0 +1,20 @@
+import { chromium } from "playwright";
+const SHOT = process.argv[2] || "/tmp/web-remote.png";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1300, height: 820 } });
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+await page.goto("http://localhost:8787/", { waitUntil: "networkidle" });
+await page.waitForFunction(() => document.body.innerText.includes("connections"), { timeout: 15000 });
+console.log("status:", await page.locator(".titlebar .info").innerText());
+console.log("connections in tree:", await page.locator(".tree .row").count());
+// Expand chinook-mini (SQLite via proxy) and open a table.
+await page.locator(".tree .row", { hasText: "chinook-mini" }).first().click();
+await page.waitForTimeout(600);
+const tracks = page.locator(".tree .row", { hasText: "tracks" }).first();
+await tracks.dblclick();
+await page.waitForSelector(".grid-row", { timeout: 8000 });
+console.log("table status:", (await page.locator(".statusbar").first().innerText()).replace(/\n/g, " "));
+await page.screenshot({ path: SHOT });
+console.log("errors:", errors.length ? errors.slice(0, 3) : "none");
+await browser.close();

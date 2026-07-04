@@ -1,10 +1,11 @@
 import { useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
-import { sql, SQLite } from "@codemirror/lang-sql";
+import { sql, SQLite, PostgreSQL, MySQL } from "@codemirror/lang-sql";
 import { EditorView } from "@codemirror/view";
-import type { SqliteClient } from "../db/SqliteClient";
 import type { QueryResult } from "../db/types";
 import { DataGrid } from "./DataGrid";
+
+type QueryFn = (sql: string) => Promise<QueryResult>;
 
 const darcula = EditorView.theme(
   {
@@ -18,15 +19,24 @@ const darcula = EditorView.theme(
   { dark: true }
 );
 
-export function Console({ client, schema }: { client: SqliteClient; schema: Record<string, string[]> }) {
-  const [text, setText] = useState("SELECT * FROM sqlite_master;");
+export function Console({
+  queryFn,
+  schema,
+  dialect = "sqlite",
+}: {
+  queryFn: QueryFn;
+  schema: Record<string, string[]>;
+  dialect?: "sqlite" | "postgres" | "mysql";
+}) {
+  const [text, setText] = useState("SELECT 1;");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [running, setRunning] = useState(false);
+  const sqlDialect = dialect === "postgres" ? PostgreSQL : dialect === "mysql" ? MySQL : SQLite;
 
   async function run() {
     if (running) return;
     setRunning(true);
-    const r = await client.exec(text);
+    const r = await queryFn(text);
     setResult(r);
     setRunning(false);
   }
@@ -47,7 +57,7 @@ export function Console({ client, schema }: { client: SqliteClient; schema: Reco
           height="100%"
           theme={darcula}
           extensions={[
-            sql({ dialect: SQLite, schema }),
+            sql({ dialect: sqlDialect, schema }),
             EditorView.lineWrapping,
             keymapRun(run),
           ]}

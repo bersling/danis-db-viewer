@@ -1,21 +1,23 @@
 import { useState } from "react";
-import type { DBTable } from "../db/types";
+import type { Connection, SchemaInfo, SchemaTable } from "../db/types";
 
 interface Props {
-  dbName: string;
-  tables: DBTable[];
+  connections: Connection[];
+  schemas: Record<string, SchemaInfo[] | "loading" | { error: string } | undefined>;
   selected: string | null;
-  onSelect: (name: string) => void;
-  onOpen: (name: string) => void;
+  onExpandConnection: (id: string) => void;
+  onSelectTable: (key: string) => void;
+  onOpenTable: (connId: string, schema: string, table: SchemaTable) => void;
 }
 
-export function Explorer({ dbName, tables, selected, onSelect, onOpen }: Props) {
-  const [search, setSearch] = useState("");
-  const [dsOpen, setDsOpen] = useState(true);
-  const filtered = search
-    ? tables.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
-    : tables;
+const KIND_ICON: Record<string, string> = { sqlite: "🗄", postgres: "🐘", mysql: "🐬" };
+const COLORS: Record<string, string> = {
+  red: "#db5a5a", orange: "#e89a4a", yellow: "#e3c95e", green: "#73b86b",
+  blue: "#5a94d9", violet: "#a67bd9", gray: "#8c8c8c",
+};
 
+export function Explorer(props: Props) {
+  const [search, setSearch] = useState("");
   return (
     <div className="sidebar">
       <div className="head">DATABASE</div>
@@ -23,86 +25,82 @@ export function Explorer({ dbName, tables, selected, onSelect, onOpen }: Props) 
         <input placeholder="Search objects" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
       <div className="tree">
-        <div className="row" onClick={() => setDsOpen((o) => !o)}>
-          <span className={"chevron" + (dsOpen ? " open" : "")}>›</span>
-          <span className="ico" style={{ color: "var(--green)" }}>🗄</span>
-          <span>{dbName}</span>
-          <span className="detail">SQLite · WASM</span>
-        </div>
-        {dsOpen &&
-          filtered.map((t) => (
-            <TableNode
-              key={t.name}
-              table={t}
-              selected={selected === t.name}
-              onSelect={() => onSelect(t.name)}
-              onOpen={() => onOpen(t.name)}
-            />
-          ))}
+        {props.connections.length === 0 && (
+          <div style={{ padding: 12, color: "var(--dim)", fontSize: 12 }}>No connections found.</div>
+        )}
+        {props.connections.map((c) => (
+          <ConnectionNode key={c.id} conn={c} search={search} {...props} />
+        ))}
       </div>
     </div>
   );
 }
 
-function TableNode({
-  table,
-  selected,
-  onSelect,
-  onOpen,
-}: {
-  table: DBTable;
-  selected: boolean;
-  onSelect: () => void;
-  onOpen: () => void;
-}) {
+function ConnectionNode({ conn, search, schemas, selected, onExpandConnection, onSelectTable, onOpenTable }: Props & { conn: Connection; search: string }) {
   const [open, setOpen] = useState(false);
+  const state = schemas[conn.id];
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && state === undefined) onExpandConnection(conn.id);
+  }
+
   return (
     <>
-      <div
-        className={"row" + (selected ? " selected" : "")}
-        style={{ paddingLeft: 22 }}
-        onClick={onSelect}
-        onDoubleClick={onOpen}
-        title={`${table.kind === "view" ? "View" : "Table"} “${table.name}” — double-click to open`}
-      >
-        <span
-          className={"chevron" + (open ? " open" : "")}
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpen((o) => !o);
-          }}
-        >
-          ›
-        </span>
-        <span className="ico" style={{ color: table.kind === "view" ? "var(--view)" : "var(--table)" }}>
-          {table.kind === "view" ? "◉" : "▦"}
-        </span>
-        <span>{table.name}</span>
+      <div className="row" onClick={toggle} title={`${conn.kind} · ${conn.host ?? ""}`}>
+        {conn.color && conn.color !== "none" && <span className="stripe" style={{ background: COLORS[conn.color] }} />}
+        <span className={"chevron" + (open ? " open" : "")}>›</span>
+        <span className="ico">{KIND_ICON[conn.kind] ?? "🗄"}</span>
+        <span>{conn.name}</span>
+        <span className="detail">{conn.kind}</span>
       </div>
-      {open && (
-        <>
-          {table.columns.map((c) => (
-            <div
-              key={c.name}
-              className="row"
-              style={{ paddingLeft: 48 }}
-              title={`${c.name} · ${c.type}${c.primaryKey ? " · PK" : ""}${c.notNull ? " · not null" : ""}`}
-            >
-              <span
-                className="ico"
-                style={{ color: c.primaryKey ? "var(--pk)" : "var(--dim)", fontSize: 11 }}
-              >
-                {c.primaryKey ? "🔑" : "•"}
-              </span>
-              <span>{c.name}</span>
-              <span className="detail">
-                {c.type.toLowerCase()}
-                {c.notNull ? " · not null" : ""}
-              </span>
-            </div>
-          ))}
-        </>
+      {open && state === "loading" && <div className="row" style={{ paddingLeft: 30, color: "var(--dim)" }}>connecting…</div>}
+      {open && state && typeof state === "object" && "error" in state && (
+        <div className="row" style={{ paddingLeft: 30, color: "#e06c75", height: "auto", whiteSpace: "normal", padding: "4px 8px 4px 30px" }}>
+          ⚠ {state.error}
+        </div>
       )}
+      {open && Array.isArray(state) &&
+        state.map((s) => (
+          <SchemaNode key={s.schema} conn={conn} schema={s} search={search}
+            selected={selected} onSelectTable={onSelectTable} onOpenTable={onOpenTable}
+            defaultOpen={state.length === 1 || s.schema === conn.database} />
+        ))}
+    </>
+  );
+}
+
+function SchemaNode({ conn, schema, search, selected, onSelectTable, onOpenTable, defaultOpen }: {
+  conn: Connection; schema: SchemaInfo; search: string; selected: string | null; defaultOpen: boolean;
+  onSelectTable: (key: string) => void; onOpenTable: (connId: string, schema: string, table: SchemaTable) => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const tables = search ? schema.tables.filter((t) => t.name.toLowerCase().includes(search.toLowerCase())) : schema.tables;
+  if (search && tables.length === 0) return null;
+  return (
+    <>
+      <div className="row" style={{ paddingLeft: 22 }} onClick={() => setOpen((o) => !o)}>
+        <span className={"chevron" + (open ? " open" : "")}>›</span>
+        <span className="ico" style={{ color: "var(--fk)" }}>⛁</span>
+        <span>{schema.schema}</span>
+        <span className="detail">{schema.tables.length}</span>
+      </div>
+      {open && tables.map((t) => {
+        const key = `${conn.id}/${schema.schema}.${t.name}`;
+        return (
+          <div key={t.name} className={"row" + (selected === key ? " selected" : "")}
+            style={{ paddingLeft: 44 }}
+            onClick={() => onSelectTable(key)}
+            onDoubleClick={() => onOpenTable(conn.id, schema.schema, t)}
+            title={`${t.kind === "view" ? "View" : "Table"} “${t.name}” — double-click to open`}>
+            <span className="ico" style={{ color: t.kind === "view" ? "var(--view)" : "var(--table)" }}>
+              {t.kind === "view" ? "◉" : "▦"}
+            </span>
+            <span>{t.name}</span>
+          </div>
+        );
+      })}
     </>
   );
 }
